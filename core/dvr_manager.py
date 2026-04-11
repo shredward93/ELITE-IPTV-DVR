@@ -91,10 +91,16 @@ class DVRManager:
                 "-c:v",                  "libx264",
                 "-preset",               "veryfast",
                 "-crf",                  "23",
+                # Repeat SPS/PPS in the encoded bitstream so each HLS segment is
+                # independently decodable even when ExoPlayer joins mid-stream.
+                "-x264-params",          "repeat-headers=1",
                 "-force_key_frames",     f"expr:gte(t,n_forced*{_SEGMENT_SECONDS})",
                 "-c:a",                  "aac",
                 "-b:a",                  "192k",
                 "-ac",                   "2",
+                # Keep audio clock aligned with the live source so emulator
+                # underruns and A/V drift do not build up over time.
+                "-af",                   "aresample=async=1000:first_pts=0",
                 "-f",                    "hls",
                 "-hls_time",             str(_SEGMENT_SECONDS),
                 "-hls_list_size",        str(_HLS_LIST_SIZE),

@@ -49,7 +49,7 @@ fun PlayerScreen(
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
-                        /* minBufferMs             */ 15_000,
+                        /* minBufferMs             */ 30_000,
                         /* maxBufferMs             */ 60_000,
                         /* bufferForPlaybackMs     */ 4_000,
                         /* bufferForPlaybackAfterRebufferMs */ 8_000,

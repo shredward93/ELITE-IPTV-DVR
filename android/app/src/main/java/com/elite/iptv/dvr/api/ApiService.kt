@@ -5,6 +5,7 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.Response
 
 interface ApiService {
 
@@ -55,10 +56,10 @@ interface ApiService {
     // ── DVR control ───────────────────────────────────────────────────────────
 
     @POST("dvr/start")
-    suspend fun startDvr(@Body body: DvrStartRequest): OkResponse
+    suspend fun startDvr(@Body body: DvrStartRequest): Response<Unit>
 
     @POST("dvr/stop")
-    suspend fun stopDvr(): OkResponse
+    suspend fun stopDvr(): Response<Unit>
 
     @GET("dvr/segments")
     suspend fun getDvrSegments(): List<DvrSegment>

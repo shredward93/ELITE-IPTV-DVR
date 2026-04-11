@@ -1,27 +1,37 @@
 """
-core/dvr_manager.py — Rolling DVR buffer manager.
+core/dvr_manager.py — Rolling DVR buffer manager (HLS mode).
 
-DVRManager owns a single FFmpeg segment-mode process that writes 30-minute
-.ts segments to dvr_buffer/. A cleanup thread enforces the hours and GB caps.
+DVRManager spawns an FFmpeg `-f hls` process that produces a rolling
+`playlist.m3u8` + 2-second `.ts` segments in dvr_buffer/. FFmpeg itself
+maintains the playlist window via `hls_list_size + delete_segments`, so
+the m3u8 is served directly to ExoPlayer as a live HLS stream — ExoPlayer
+then handles live edge, seamless segment transitions, and rebuffering.
 
 API used by web_server.py:
     mgr.start(channel_id, channel_name)
     mgr.stop()
-    mgr.get_segments()  →  list[dict]
-    mgr.get_status()    →  dict
+    mgr.get_playlist_path() -> str
+    mgr.get_segments()      -> list[dict]   (debug only)
+    mgr.get_status()        -> dict
 """
 
 import datetime
 import glob
 import os
 import subprocess
+import sys
 import threading
 import time
 
 import config
 
 
-_SEGMENT_SECONDS = 1800   # 30-minute segments
+_SEGMENT_SECONDS  = 4                  # 4-second HLS segments — must match force_key_frames interval below
+_PLAYLIST_NAME    = "playlist.m3u8"
+# Manifest lists only the last 5 minutes of segments. Older segments stay on
+# disk for DVR rewind, but the live playback window is always tight so every
+# listed segment is guaranteed to exist.
+_HLS_LIST_SIZE    = (5 * 60) // _SEGMENT_SECONDS   # = 75 segments
 
 
 class DVRJob:
@@ -51,7 +61,7 @@ class DVRManager:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def start(self, channel_id: str, channel_name: str) -> None:
-        """Stop any current session, clear the buffer, start a fresh DVR session."""
+        """Stop any current session, clear the buffer, start a fresh HLS session."""
         with self._lock:
             self._stop_locked()
             self._clear_buffer()
@@ -62,21 +72,36 @@ class DVRManager:
                 f"{config.SERVER_URL.rstrip('/')}"
                 f"/live/{config.USERNAME}/{config.PASSWORD}/{channel_id}.ts"
             )
-            seg_pattern = os.path.join(config.DVR_BUFFER_DIR, "seg_%03d.ts")
-
+            seg_pattern = os.path.join(config.DVR_BUFFER_DIR, "seg_%06d.ts")
+            playlist    = os.path.join(config.DVR_BUFFER_DIR, _PLAYLIST_NAME)
+            # Rolling window: (hours * 3600) / segment_seconds entries.
             cmd = [
                 "ffmpeg", "-y",
-                "-reconnect",        "1",
-                "-reconnect_at_eof", "1",
-                "-reconnect_streamed","1",
-                "-reconnect_delay_max","5",
-                "-timeout",          "15000000",
-                "-i",                stream_url,
-                "-f",                "segment",
-                "-segment_time",     str(_SEGMENT_SECONDS),
-                "-reset_timestamps", "1",
-                "-c",                "copy",
-                seg_pattern,
+                "-reconnect",            "1",
+                "-reconnect_at_eof",     "1",
+                "-reconnect_streamed",   "1",
+                "-reconnect_delay_max",  "5",
+                "-timeout",              "15000000",
+                "-fflags",               "+discardcorrupt",
+                "-i",                    stream_url,
+                # Transcode video so we can force keyframes at every segment
+                # boundary. -c:v copy produces irregular segment durations and
+                # mid-GOP cuts → green frames + decoder confusion in ExoPlayer.
+                # veryfast preset uses ~30-50% of one core for 1080p — fine on PC.
+                "-c:v",                  "libx264",
+                "-preset",               "veryfast",
+                "-crf",                  "23",
+                "-force_key_frames",     f"expr:gte(t,n_forced*{_SEGMENT_SECONDS})",
+                "-c:a",                  "aac",
+                "-b:a",                  "192k",
+                "-ac",                   "2",
+                "-f",                    "hls",
+                "-hls_time",             str(_SEGMENT_SECONDS),
+                "-hls_list_size",        str(_HLS_LIST_SIZE),
+                "-hls_flags",            "delete_segments+omit_endlist+program_date_time",
+                "-hls_segment_type",     "mpegts",
+                "-hls_segment_filename", seg_pattern,
+                playlist,
             ]
 
             job = DVRJob(channel_id, channel_name)
@@ -99,33 +124,35 @@ class DVRManager:
 
         if job.status == "buffering":
             threading.Thread(target=self._monitor_loop, args=(job,), daemon=True).start()
-            threading.Thread(target=self._cleanup_loop, args=(job,), daemon=True).start()
 
     def stop(self) -> None:
         """Stop the current DVR session. Buffer files are preserved until next start()."""
         with self._lock:
             self._stop_locked()
 
+    def get_playlist_path(self) -> str:
+        """Absolute path to the live HLS manifest (may not yet exist)."""
+        return os.path.join(config.DVR_BUFFER_DIR, _PLAYLIST_NAME)
+
     def get_segments(self) -> list[dict]:
         """
-        Return available segments, oldest first.
+        Return available segments, oldest first (debug / readiness only).
         Each entry: {name, size_bytes, is_active}
-        The last entry is always marked is_active=True (may still be growing).
         """
         paths = self._list_segment_paths()
         if not paths:
             return []
-        result = []
-        for i, path in enumerate(paths):
-            result.append({
-                "name":       os.path.basename(path),
-                "size_bytes": self._safe_getsize(path),
+        return [
+            {
+                "name":       os.path.basename(p),
+                "size_bytes": self._safe_getsize(p),
                 "is_active":  i == len(paths) - 1,
-            })
-        return result
+            }
+            for i, p in enumerate(paths)
+        ]
 
     def get_status(self) -> dict:
-        job = self._job
+        job       = self._job
         max_bytes = int(config.DVR_MAX_GB * 1024 ** 3)
 
         if job is None or job.status == "stopped":
@@ -144,16 +171,7 @@ class DVRManager:
         total = sum(self._safe_getsize(p) for p in paths)
 
         age_secs = 0
-        if len(paths) >= 2:
-            try:
-                age_secs = int(
-                    os.path.getmtime(paths[-1])
-                    - os.path.getmtime(paths[0])
-                    + _SEGMENT_SECONDS
-                )
-            except OSError:
-                pass
-        elif len(paths) == 1:
+        if paths:
             try:
                 age_secs = int(time.time() - os.path.getmtime(paths[0]))
             except OSError:
@@ -191,14 +209,28 @@ class DVRManager:
                     pass
 
     def _clear_buffer(self) -> None:
+        # On Windows, FFmpeg holds segment files open; orphaned FFmpeg processes
+        # (e.g. from a previous server run) must be killed before we can delete.
+        if sys.platform == "win32":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "ffmpeg.exe"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(0.5)  # brief wait for handles to close
+            except Exception:
+                pass
+
         buf = config.DVR_BUFFER_DIR
         if not os.path.isdir(buf):
             return
-        for path in glob.glob(os.path.join(buf, "seg_*.ts")):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        for pattern in ("seg_*.ts", _PLAYLIST_NAME, "playlist.m3u8.tmp"):
+            for path in glob.glob(os.path.join(buf, pattern)):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
     def _monitor_loop(self, job: DVRJob) -> None:
         """Block until FFmpeg exits; surface an error if it exits unexpectedly."""
@@ -219,47 +251,6 @@ class DVRManager:
                     job.error_msg = lines[-1] if lines else "ffmpeg exited unexpectedly"
                 else:
                     job.error_msg = "ffmpeg exited unexpectedly"
-
-    def _cleanup_loop(self, job: DVRJob) -> None:
-        """Enforce caps every 60 s while this job is the active buffering session."""
-        while True:
-            time.sleep(60)
-            with self._lock:
-                if self._job is not job or job.status != "buffering":
-                    return
-            self._enforce_caps()
-
-    def _enforce_caps(self) -> None:
-        """
-        Delete oldest segments to stay within DVR_MAX_HOURS and DVR_MAX_GB.
-        The last segment (actively being written) is never deleted.
-        """
-        paths = self._list_segment_paths()
-        if len(paths) < 2:
-            return
-
-        # Candidates = everything except the active (last) segment.
-        candidates = list(paths[:-1])
-
-        # Hours cap: max segments = total allowed hours / segment length
-        max_segs = (config.DVR_MAX_HOURS * 3600) // _SEGMENT_SECONDS
-        while len(candidates) >= max_segs:
-            try:
-                os.remove(candidates.pop(0))
-            except OSError:
-                pass
-
-        # GB cap
-        all_remaining = candidates + [paths[-1]]
-        total     = sum(self._safe_getsize(p) for p in all_remaining)
-        max_bytes = int(config.DVR_MAX_GB * 1024 ** 3)
-        while total > max_bytes and candidates:
-            path   = candidates.pop(0)
-            total -= self._safe_getsize(path)
-            try:
-                os.remove(path)
-            except OSError:
-                pass
 
     def _list_segment_paths(self) -> list[str]:
         buf = config.DVR_BUFFER_DIR

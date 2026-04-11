@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -23,7 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.elite.iptv.dvr.api.ApiClient
@@ -40,13 +41,26 @@ fun PlayerScreen(
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var loadedSegments by remember { mutableIntStateOf(0) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
 
     val player = remember {
-        ExoPlayer.Builder(context).build().apply { playWhenReady = true }
+        ExoPlayer.Builder(context)
+            .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        /* minBufferMs             */ 15_000,
+                        /* maxBufferMs             */ 60_000,
+                        /* bufferForPlaybackMs     */ 4_000,
+                        /* bufferForPlaybackAfterRebufferMs */ 8_000,
+                    )
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build()
+            )
+            .build()
+            .apply { playWhenReady = true }
     }
 
-    // Release player and stop DVR when composable leaves the tree
     DisposableEffect(Unit) {
         onDispose {
             player.release()
@@ -54,7 +68,6 @@ fun PlayerScreen(
         }
     }
 
-    // Start DVR, wait for first segment, then poll for new ones
     LaunchedEffect(channelId) {
         isLoading = true
         error = null
@@ -67,40 +80,55 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        // Wait up to 30 s for the first segment to appear
-        var segs = emptyList<com.elite.iptv.dvr.api.DvrSegment>()
-        repeat(15) {
-            delay(2_000)
-            segs = runCatching { viewModel.getDvrSegments() }.getOrElse { emptyList() }
-            if (segs.isNotEmpty()) return@repeat
+        // Wait for FFmpeg to produce at least 2 segments so the HLS manifest
+        // is populated and ExoPlayer has something to start playing immediately.
+        var ready = false
+        repeat(25) {
+            delay(800)
+            val segs = runCatching { viewModel.getDvrSegments() }.getOrElse { emptyList() }
+            if (segs.size >= 2) { ready = true; return@repeat }
         }
 
-        if (segs.isEmpty()) {
+        if (!ready) {
             error = "No stream data received. Is the PC running?"
             isLoading = false
             return@LaunchedEffect
         }
 
-        // Build initial playlist
-        val items = segs.map { seg ->
-            MediaItem.fromUri(ApiClient.dvrSegmentUrl(viewModel.pcUrl, seg.name))
-        }
-        player.setMediaItems(items)
-        player.prepare()
-        loadedSegments = segs.size
-        isLoading = false
+        // Single HLS manifest URL. media3-exoplayer-hls auto-detects .m3u8 and
+        // builds an HlsMediaSource; LiveConfiguration tells it to aim for the
+        // live edge with a 6 s target offset and mild speed-ramp to catch up.
+        val mediaItem = MediaItem.Builder()
+            .setUri(ApiClient.dvrPlaylistUrl(viewModel.pcUrl))
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    // Stay 20 s behind live edge — segments are always ready,
+                    // no chance of hitting the edge and stalling.
+                    .setTargetOffsetMs(20_000)
+                    .setMinOffsetMs(10_000)
+                    .setMaxOffsetMs(40_000)
+                    // No speed ramp — constant 1× playback, no audio pitch shifts.
+                    .setMinPlaybackSpeed(1.0f)
+                    .setMaxPlaybackSpeed(1.0f)
+                    .build()
+            )
+            .build()
 
-        // Poll for new segments every 30 s
-        while (true) {
-            delay(30_000)
-            val newSegs = try { viewModel.getDvrSegments() } catch (_: Exception) { continue }
-            if (newSegs.size > loadedSegments) {
-                newSegs.drop(loadedSegments).forEach { seg ->
-                    player.addMediaItem(
-                        MediaItem.fromUri(ApiClient.dvrSegmentUrl(viewModel.pcUrl, seg.name))
-                    )
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        isLoading = false
+    }
+
+    // Keep nudging focus back to PlayerView so D-pad events (OK / arrows) always
+    // reach the controller. `update` callback alone isn't enough — focus can be
+    // stolen on surface updates and never recovered.
+    LaunchedEffect(isLoading, error) {
+        if (!isLoading && error == null) {
+            while (true) {
+                playerView?.let {
+                    if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
                 }
-                loadedSegments = newSegs.size
+                delay(750)
             }
         }
     }
@@ -119,7 +147,14 @@ fun PlayerScreen(
                     useController = true
                     setShowNextButton(false)
                     setShowPreviousButton(false)
-                }
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    keepScreenOn = true
+                    controllerAutoShow = false
+                    controllerHideOnTouch = true
+                    setControllerShowTimeoutMs(4_000)
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                }.also { playerView = it }
             },
             modifier = Modifier.fillMaxSize(),
         )

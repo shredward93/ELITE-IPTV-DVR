@@ -245,9 +245,35 @@ class RemoteHandler(BaseHTTPRequestHandler):
             else:
                 self._error(503, "DVR not available")
 
+        # ── DVR HLS playlist (the only URL ExoPlayer needs) ───────────────────
+        elif path == "/dvr/playlist.m3u8":
+            if not self.ctx.dvr_manager:
+                self._error(503, "DVR not available")
+                return
+            pl_path = self.ctx.dvr_manager.get_playlist_path()
+            try:
+                with open(pl_path, "rb") as f:
+                    data = f.read()
+            except OSError:
+                self._error(404, "playlist not ready")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         # ── DVR segment file serving ──────────────────────────────────────────
-        elif path.startswith("/dvr/stream/"):
-            seg_name = path[len("/dvr/stream/"):]
+        # Two forms supported:
+        #   /dvr/seg_000123.ts       — ExoPlayer HLS (segments resolved relative to playlist.m3u8)
+        #   /dvr/stream/seg_000123.ts — legacy/debug direct path
+        elif path.startswith("/dvr/stream/") or re.match(r'^/dvr/seg_\d+\.ts$', path):
+            seg_name = path.rsplit("/", 1)[-1]
             if not re.match(r'^seg_\d+\.ts$', seg_name):
                 self._error(400, "invalid segment name")
                 return

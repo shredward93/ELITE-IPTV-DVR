@@ -105,7 +105,7 @@ fun TVGuideScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(viewModel.epgListings, key = { it.start }) { listing ->
+            items(viewModel.epgListings, key = { it.start ?: it.title }) { listing ->
                 EpgRow(listing, onRecord = { scheduleDialog = listing })
             }
         }
@@ -137,7 +137,7 @@ fun TVGuideScreen(
                             viewModel.scheduleRecording(
                                 channelId    = channelId,
                                 channelName  = channelName,
-                                startTime    = listing.start,
+                                startTime    = listing.start ?: "",
                                 durationMins = epgDurationMins(listing.start, listing.stop),
                             )
                             scheduleStatus = "Recording scheduled."

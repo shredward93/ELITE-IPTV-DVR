@@ -34,9 +34,9 @@ object ApiClient {
             .create(ApiService::class.java)
     }
 
-    /** Full URL for a DVR segment, used directly by ExoPlayer. */
-    fun dvrSegmentUrl(baseUrl: String, segName: String): String =
-        "${baseUrl.trimEnd('/')}/dvr/stream/$segName"
+    /** Full URL for the live HLS playlist. ExoPlayer consumes this directly. */
+    fun dvrPlaylistUrl(baseUrl: String): String =
+        "${baseUrl.trimEnd('/')}/dvr/playlist.m3u8"
 
     /** Full URL for a completed recording file. */
     fun recordingUrl(baseUrl: String, filename: String): String =

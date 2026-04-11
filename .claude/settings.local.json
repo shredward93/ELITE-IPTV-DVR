@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Skill(whats-next)",
-      "Skill(whats-next:*)"
+      "Skill(whats-next:*)",
+      "WebSearch",
+      "mcp__android-adb__list_android_devices",
+      "mcp__android-adb__get_android_current_activity",
+      "mcp__android-adb__take_android_screenshot",
+      "mcp__android-adb__get_android_logcat",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs"
     ]
   }
 }

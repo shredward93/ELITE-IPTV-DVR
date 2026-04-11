@@ -1,238 +1,148 @@
 <original_task>
-Two tasks for this session:
-1. Make the Android app persist/save the PC server URL across restarts.
-2. Add an EPG category browser with a full TV guide grid interface (channels × time).
+Troubleshoot and fix ExoPlayer live HLS playback issues:
+- Video playing faster than 1× speed
+- Green overlay flashes
+- Periodic skipping and halting
 </original_task>
 
 <work_completed>
-## Task 1: PC Location Saving — Already Implemented (no code changes needed)
-- `MainViewModel.kt`: SharedPreferences on init, `savePcUrl()` persists via `.apply()`
-- `Navigation.kt` line 39: skips Pair screen if `pcUrl` non-empty on app launch
-- `PairScreen.kt`: pre-populates URL field from `viewModel.pcUrl`
-- Settings button → navigates to Pair screen with URL pre-filled
+## Architecture migration (completed last session)
+Rewrote the entire DVR pipeline from manual `.ts` segment polling → proper HLS:
+- **core/dvr_manager.py**: FFmpeg now runs `-f hls` with `-hls_time 4`, `hls_list_size 75`, `delete_segments+omit_endlist+program_date_time`. Rolling 5-minute manifest window. `_clear_buffer()` kills orphaned `ffmpeg.exe` on Windows before deleting files.
+- **core/web_server.py**: Added `/dvr/playlist.m3u8` route (serves manifest with `no-cache`), segment serving on `/dvr/seg_*.ts`.
+- **android/app/build.gradle.kts**: Added `media3-exoplayer-hls:1.3.0`.
+- **android/app/.../api/ApiClient.kt**: Replaced `dvrSegmentUrl()` with `dvrPlaylistUrl()` → `/dvr/playlist.m3u8`.
+- **android/app/.../ui/player/PlayerScreen.kt**: Single HLS `MediaItem` with `LiveConfiguration` (targetOffset=20s, speed locked 1.0/1.0). `DefaultLoadControl` (15s min, 60s max, 4s start, 8s rebuffer). Focus nudge loop every 750ms.
 
-## Task 2: EPG Category Browser + Full TV Guide Grid — COMPLETE
+## Bugs fixed
+| Bug | Root cause | Fix applied |
+|-----|-----------|-------------|
+| 30-sec video freeze every 2 min | H.264 decoder reset at segment boundaries (raw .ts playlist) | Switched to HLS architecture |
+| No audio | Source AC3, emulator has no AC3 decoder | `-c:a aac -b:a 192k -ac 2` transcode |
+| Audio/video speed ramp | `LiveConfiguration` `maxPlaybackSpeed=1.03f` caused ExoPlayer to speed up after decoder resets | Locked both min/max to `1.0f` |
+| Black screen + 30-min pre-filled timeline | `hls_list_size=5400` → thousands of listed segments, early ones deleted → 404 cascade | Reduced to `hls_list_size=75` |
+| `append_list` continuation bug | FFmpeg continued sequence numbers from old session → 404s on new session | Removed `append_list` flag |
+| Orphaned FFmpeg on Windows | Old server's FFmpeg held `.ts` files open, `_clear_buffer()` silently failed | Added `taskkill /F /IM ffmpeg.exe` before deletion |
+| Fast-forward every ~9s | `onPlayerError` recovery called `seekToDefaultPosition()` on every emulator audio stall (`UnexpectedDiscontinuityException`) | Removed `onPlayerError` listener entirely |
+| Green overlay flashes | Missing SPS/PPS at segment boundaries | Added `-bsf:v dump_extra` to FFmpeg command |
 
-### PC backend (`core/web_server.py`)
-- Fixed `/api/epg`: now calls `decode_epg_text()` on `title` and `description` before returning JSON (EPG was returning raw base64 strings before)
-- Added `from concurrent.futures import ThreadPoolExecutor` and `from core.epg import decode_epg_text`
-- New `GET /api/categories`: Xtream `get_live_categories` → `[{category_id, category_name}]`
-- New `GET /api/channels/by-category?category_id=X`: Xtream `get_live_streams&category_id=X` → `[{name, id}]`
-- New `GET /api/epg/multi?channel_ids=X,Y,Z&limit=N`: parallel fetch via `ThreadPoolExecutor(max_workers=10)`, capped at 30 channels, base64-decoded, returns `[{channel_id, listings[]}]`
-
-### Android Models (`api/Models.kt`)
-Added two new data classes:
-```kotlin
-data class Category(
-    @SerializedName("category_id")   val categoryId: String,
-    @SerializedName("category_name") val categoryName: String,
-)
-data class ChannelEpg(
-    @SerializedName("channel_id") val channelId: String,
-    val listings: List<EpgListing>,
-)
+## Current FFmpeg command (dvr_manager.py)
+```python
+cmd = [
+    "ffmpeg", "-y",
+    "-reconnect", "1", "-reconnect_at_eof", "1",
+    "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+    "-timeout", "15000000",
+    "-fflags", "+discardcorrupt",
+    "-avoid_negative_ts", "make_zero",
+    "-i", stream_url,
+    "-c:v", "copy",
+    "-bsf:v", "dump_extra",
+    "-c:a", "aac", "-b:a", "192k", "-ac", "2",
+    "-f", "hls",
+    "-hls_time", "4",
+    "-hls_list_size", "75",
+    "-hls_flags", "delete_segments+omit_endlist+program_date_time",
+    "-hls_segment_type", "mpegts",
+    "-hls_segment_filename", seg_pattern,
+    playlist,
+]
 ```
 
-### Android API (`api/ApiService.kt`)
-Added 3 new suspend functions:
-```kotlin
-@GET("api/categories")
-suspend fun getCategories(): List<Category>
-
-@GET("api/channels/by-category")
-suspend fun getChannelsByCategory(@Query("category_id") categoryId: String): List<Channel>
-
-@GET("api/epg/multi")
-suspend fun getMultiEpg(
-    @Query("channel_ids") channelIds: String,
-    @Query("limit") limit: Int = 6,
-): List<ChannelEpg>
-```
-
-### Android ViewModel (`viewmodel/MainViewModel.kt`)
-Added state + load functions:
-- `var categories`, `var categoryChannels`, `var guideEpg` state variables
-- `loadCategories()`, `loadChannelsByCategory(categoryId)`, `loadGuideEpg(channelIds, limit)` functions
-- `loadChannelsByCategory` resets both `categoryChannels` and `guideEpg` to empty before fetching
-
-### Android EpgGuideScreen (`ui/guide/EpgGuideScreen.kt`) — NEW FILE
-Full TV guide screen with:
-- `@file:OptIn(ExperimentalTvMaterial3Api::class)`
-- Left sidebar (220dp): `LazyColumn` of `CategoryItem` (TV `Surface`, orange on focus/selected)
-- Right panel: header bar + `GuideTimeHeader` + `LazyColumn` of `GuideChannelRow`
-- `GuideTimeHeader`: 28dp row, 160dp gutter, time labels every 30 min
-- `GuideChannelRow`: 160dp channel name `Surface` (play live) + `LazyRow` of `ProgramCell`
-- `ProgramCell`: width = `(durationMin * DP_PER_MIN).dp` clamped to min 60dp; green tint for current programme; `isNow` = startMs <= nowMs && stopMs > nowMs
-- `parseEpgMs()`: `ThreadLocal<SimpleDateFormat("yyyyMMddHHmmss", UTC)>` for thread-safe parsing
-- `formatEpgTime()` and `epgDurationMins()` declared `internal` (shared with TVGuideScreen in same package)
-- Schedule AlertDialog with channel name, time range, confirm/cancel
-- Constants: `DP_PER_MIN = 4`, `WINDOW_MINS = 180`, `PRE_MINS = 30`
-- LaunchedEffect chain: Unit→loadCategories; selectedCategory→loadChannelsByCategory; categoryChannels→loadGuideEpg(first 30 channels, limit=8)
-
-### Android Navigation (`ui/Navigation.kt`)
-- Added `object GuideGrid : Screen("guide_grid")` to sealed class
-- Added `composable(Screen.GuideGrid.route)` block wiring `EpgGuideScreen`
-- Added `onGuideGridOpen` lambda to `ChannelBrowserScreen` composable call
-
-### Android ChannelBrowserScreen (`ui/channels/ChannelBrowserScreen.kt`)
-- Added `onGuideGridOpen: () -> Unit` parameter
-- Added `TvButton("TV Guide", onClick = onGuideGridOpen)` in header Row (before DVR Library)
-
-### Android TVGuideScreen (`ui/guide/TVGuideScreen.kt`)
-- Removed duplicate `private fun formatEpgTime()` and `private fun epgDurationMins()` (now `internal` in EpgGuideScreen.kt, same package)
-- Added comment noting their new location
-
-## Key decisions
-- Used independent `LazyRow` per channel row (not shared `ScrollState`) — D-pad navigation works correctly; trade-off is rows don't pixel-align horizontally when scrolling
-- Base64 decoding on PC side, not Android side — keeps Android model simple (plain String)
-- `internal` visibility for shared time utilities in same package — avoids duplication without exposing to other packages
-- `ThreadLocal<SimpleDateFormat>` for `parseEpgMs()` — thread-safe without synchronization cost
+## APK state
+Built and installed on emulator last session. Server has NOT been restarted after `-bsf:v dump_extra` was added.
 </work_completed>
 
 <work_remaining>
-## 1. Build APK
-```bash
-cd "android" && \
-  JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" \
-  ANDROID_HOME="/c/Users/eddyd/AppData/Local/Android/Sdk" \
-  "/c/Users/eddyd/.gradle/wrapper/dists/gradle-8.2-bin/bbg7u40eoinfdyxsxr3z4i7ta/gradle-8.2/bin/gradle" \
-  assembleDebug --no-daemon
-```
+## Immediate: Apply pending fix
+1. **Restart Python server** — `-bsf:v dump_extra` is in code but server is still running the old command. Must restart to take effect.
+2. **Retest green flash** — after restart, play a channel for 5+ minutes; confirm green flashes stop.
 
-## 2. Install on emulator
-```bash
-"/c/Users/eddyd/AppData/Local/Android/Sdk/platform-tools/adb.exe" install -r \
-  android/app/build/outputs/apk/debug/app-debug.apk
-```
+## Troubleshoot "playing too fast"
+Current hypothesis: source PTS discontinuities interacting with `avoid_negative_ts make_zero` cause the HLS muxer to write broken DTS in segments, which ExoPlayer interprets as fast playback.
 
-## 3. Start PC server
-Ensure PC server is running and IPTV credentials are configured in `config.py`.
+Steps to investigate (in order):
+1. **ffprobe 5–6 consecutive segments** — check PTS/DTS continuity across segment boundaries:
+   ```
+   ffprobe -v quiet -print_format json -show_packets -select_streams v:0 dvr_buffer/seg_000075.ts | head -60
+   ```
+   Look for: large DTS jumps, negative values, or DTS not matching previous segment's last DTS + frame_duration.
+2. **Try removing `avoid_negative_ts make_zero`** — if source has clean PTS, this flag can introduce drift. Remove it and retest.
+3. **Try different channel** — rule out whether "fast" is stream-specific (some providers have timing issues on certain channels).
+4. **Add A/V resync** — if AC3→AAC drift is causing the perception of fast video:
+   ```
+   "-af", "aresample=async=1000"
+   ```
+   Add to FFmpeg command after `-ac 2`.
+5. **Check `#EXT-X-PROGRAM-DATE-TIME` timestamps** — open `dvr_buffer/playlist.m3u8` and verify `PROGRAM-DATE-TIME` values increment by ~4s per segment and match wall clock.
 
-## 4. End-to-end test — EpgGuideScreen
-- Pair screen: enter `http://10.0.2.2:8080`, confirm connection
-- ChannelBrowser: "TV Guide" button appears in header → navigates to EpgGuideScreen
-- Select a category → channel list loads with EPG grid
-- Programme cells appear at proportional widths; current programme is green-tinted
-- Click channel name → plays live stream
-- Click programme cell → schedule dialog appears → confirm schedules recording
-- Back button returns to ChannelBrowserScreen
+## Troubleshoot skipping/halting
+These may be emulator-only artifacts (audio HAL stalls → `UnexpectedDiscontinuityException`). Steps:
+1. Check logcat for `ExoPlayerImpl` or `AudioTrack` errors during a stall:
+   ```
+   adb logcat -s ExoPlayerImpl AudioTrack MediaCodecVideoRenderer
+   ```
+2. If stalls correlate with `device stall time corrected` in logcat → emulator-only, will not occur on real hardware.
+3. If stalls occur independently → increase `minBufferMs` in `DefaultLoadControl` from 15s to 30s.
 
-## 5. Verify PC endpoints directly
-```bash
-curl http://localhost:8080/api/categories
-curl "http://localhost:8080/api/channels/by-category?category_id=1"
-curl "http://localhost:8080/api/epg/multi?channel_ids=1234,5678&limit=8"
-```
-Confirm: titles are plain text (not base64), listings have valid `start`/`stop` in `yyyyMMddHHmmss` format.
-
-## Optional enhancements (not requested, defer)
-- Time window scrubbing: forward/back buttons to shift the 3-hour window
-- Lazy-load more channels as user scrolls past first 50 in guide
-- Current-time indicator line: `Canvas { drawLine(orange, x=nowOffsetDp) }` overlay
-- Synchronized horizontal scroll across all rows (complex, lower priority)
+## Verification checklist
+- [ ] No green flashes after server restart
+- [ ] Playback speed appears 1× (news ticker/clock on screen confirm)
+- [ ] No stalls for 10+ consecutive minutes
+- [ ] Audio in sync with video
 </work_remaining>
 
 <attempted_approaches>
-## Synchronized horizontal scroll — rejected
-Considered sharing a single `rememberScrollState()` across the time header `Row` and all channel `Row`s via `Modifier.horizontalScroll(sharedHScroll)`. This would give true pixel-aligned grid scrolling. Rejected because:
-- Every `LazyRow` item would need to be a non-lazy `Row` with `horizontalScroll`, losing item recycling
-- D-pad focus traversal breaks when using `horizontalScroll` on TV — focus can't move between cells correctly
-- Chosen approach: independent `LazyRow` per channel row; D-pad works correctly; rows don't share scroll position but each row is independently navigable
+## Fast-forward cause — ruled out
+- `onPlayerError` → `seekToDefaultPosition()` on every `UnexpectedDiscontinuityException` (emulator audio stalls ~every 9s). This was confirmed as the cause of the apparent fast-forward in the previous session and was removed. However fast playback persisted → root cause is upstream of the error handler.
+- `LiveConfiguration` speed ramp (`maxPlaybackSpeed=1.03f`) — also caused speed issues; fixed by locking to 1.0/1.0, but fast play is still reported, so a second cause remains.
 
-## Base64 decoding on Android — rejected
-Could have decoded base64 in Android Kotlin. Rejected: better to keep Android models as plain types; PC already has `decode_epg_text()` in `core/epg.py` that handles encoding variants.
-
-## Unused imports removed from EpgGuideScreen.kt
-Initially imported `rememberScrollState` and `horizontalScroll` when planning synchronized scroll. Removed after switching to `LazyRow` approach.
-
-## TVGuideScreen.kt private function conflict
-`formatEpgTime` and `epgDurationMins` were `private` in `TVGuideScreen.kt`. Making them accessible to `EpgGuideScreen.kt` (same package) required changing to `internal` and moving them to `EpgGuideScreen.kt` as the canonical location.
+## Approaches NOT yet tried
+- Removing `avoid_negative_ts make_zero`
+- Adding `aresample=async=1000`
+- Testing a different channel
+- Checking PTS with ffprobe
 </attempted_approaches>
 
 <critical_context>
-## SDK / Tool Paths
+## Key architecture facts
+- HLS manifest is at `dvr_buffer/playlist.m3u8`. It's a rolling 5-minute window (75 × 4s segments). `delete_segments` removes old `.ts` files from disk; `omit_endlist` keeps it a live stream (no `#EXT-X-ENDLIST`).
+- `program_date_time` flag is critical — ExoPlayer uses `#EXT-X-PROGRAM-DATE-TIME` to calculate live offset. Without it, `LiveConfiguration.targetOffsetMs` has no anchor and ExoPlayer defaults to live edge (causes stalling).
+- `dump_extra` injects SPS/PPS before every keyframe so each segment is independently decodable. Without it, segments after the first produce green frames until the next IDR.
+- AC3 audio is transcoded to AAC because Android/emulator lacks an AC3 decoder. This transcode introduces ~20–40ms A/V drift per segment boundary, which compounds over time and may cause perceived speed differences.
+- `avoid_negative_ts make_zero` was added to handle streams where PTS starts at a large non-zero value. It forces the first PTS to 0. On streams where PTS is already clean this can introduce a discontinuity.
+- Emulator: `http://10.0.2.2:8080` → PC. Real TV on LAN: `http://192.168.2.81:8080`.
 
-| Tool | Path |
-|------|------|
-| Android SDK | `C:\Users\eddyd\AppData\Local\Android\Sdk` |
-| ADB | `C:\Users\eddyd\AppData\Local\Android\Sdk\platform-tools\adb.exe` |
-| Emulator | `C:\Users\eddyd\AppData\Local\Android\Sdk\emulator\emulator.exe` |
-| Gradle binary | `C:\Users\eddyd\.gradle\wrapper\dists\gradle-8.2-bin\bbg7u40eoinfdyxsxr3z4i7ta\gradle-8.2\bin\gradle` |
-| Java | `C:\Program Files\Android\Android Studio\jbr` |
-| AVD | `Television_1080p` (API 33, Android TV, x86_64) |
+## Files to touch for player fixes
+- `core/dvr_manager.py` — FFmpeg command tweaks (avoid_negative_ts, aresample)
+- `android/app/src/main/java/com/elite/iptv/dvr/ui/player/PlayerScreen.kt` — ExoPlayer config (LoadControl, LiveConfiguration)
+- No other files should need changes for playback issues.
 
-## Gradle build — use the binary directly, NOT gradlew (quoting bug on Windows)
-
-## Emulator host alias
-From Android emulator: `10.0.2.2` = host PC. Pair screen URL: `http://10.0.2.2:8080`
-
-## tv-material 1.0.0 API (stable)
-- `@file:OptIn(ExperimentalTvMaterial3Api::class)` required on all TV screens
-- `Surface` from `androidx.tv.material3` (focusable, D-pad-aware) — NOT from `androidx.compose.material3`
-- `ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(...))`
-- `ClickableSurfaceDefaults.colors(containerColor=..., focusedContainerColor=...)`
-- Standard `LazyColumn`/`LazyRow` (not `TvLazyColumn`)
-
-## Xtream Codes API
-- Categories: `action=get_live_categories` → `[{category_id, category_name, parent_id}, ...]`
-- Channels by category: `action=get_live_streams&category_id=X` → `[{num, name, stream_id, ...}, ...]`
-- EPG: `action=get_short_epg&stream_id=X&limit=N` → `{epg_listings: [{title(b64), description(b64), start, end}]}`
-- Channel `id` in Android model = Xtream `stream_id`
-- EPG title/description are base64-encoded — must decode before returning to Android
-
-## EPG time format
-Xtream EPG `start`/`stop` format: `"yyyyMMddHHmmss +0000"` — parse only first 14 chars (trim whitespace first)
-
-## Design tokens
-- Background: `Color.Black`
-- Accent/orange: `Color(0xFFF89344)`
-- Card bg: `Color(0xFF1E1E1E)`, focused: `Color(0xFF2E2E2E)`
-- Current programme green: `Color(0xFF1A2E1A)` bg, `Color(0xFF90EE90)` text
-- Success: `Color(0xFF2ECC71)`
-- Body text min: 18sp, min interactive target: 48dp
-
-## File layout (Android)
-```
-android/app/src/main/java/com/elite/iptv/dvr/
-  api/
-    ApiClient.kt    — Retrofit singleton, setBaseUrl()
-    ApiService.kt   — Retrofit interface
-    Models.kt       — all data classes
-  ui/
-    Navigation.kt
-    channels/ChannelBrowserScreen.kt
-    guide/
-      TVGuideScreen.kt       — per-channel EPG list (uses internal fns from EpgGuideScreen)
-      EpgGuideScreen.kt      — full category+grid TV guide (NEW)
-    library/DVRLibraryScreen.kt
-    pair/PairScreen.kt
-    player/PlayerScreen.kt
-  viewmodel/MainViewModel.kt
-  MainActivity.kt
-```
+## What NOT to change
+- `hls_list_size=75` — this was carefully chosen after the 5400→75 disaster. Don't increase it.
+- `onPlayerError` listener — was removed intentionally. Do not add it back.
+- `LiveConfiguration` min/max speed `1.0f/1.0f` — locked intentionally. Do not allow speed ramp.
 </critical_context>
 
 <current_state>
-## Status
+## File status
+| File | State |
+|------|-------|
+| `core/dvr_manager.py` | Modified, not committed. `-bsf:v dump_extra` added. `avoid_negative_ts make_zero` still present. |
+| `android/.../PlayerScreen.kt` | Modified, not committed. `onPlayerError` listener removed. `LiveConfiguration` locked 1.0x. |
+| `android/.../ApiClient.kt` | Modified, not committed. `dvrPlaylistUrl()` added. |
+| `android/app/build.gradle.kts` | Modified, not committed. `media3-exoplayer-hls` added. |
 
-| Item | Status |
-|------|--------|
-| PC backend (DVR, all prior endpoints) | ✅ Complete |
-| All Android screens (prior session) | ✅ Written |
-| PC location saving (Android SharedPreferences) | ✅ Already implemented |
-| EPG base64 decode fix (`web_server.py`) | ✅ Done |
-| PC `/api/categories` endpoint | ✅ Done |
-| PC `/api/channels/by-category` endpoint | ✅ Done |
-| PC `/api/epg/multi` endpoint | ✅ Done |
-| Android `Models.kt` (Category, ChannelEpg) | ✅ Done |
-| Android `ApiService.kt` (3 new endpoints) | ✅ Done |
-| Android `MainViewModel.kt` (guide state + methods) | ✅ Done |
-| `EpgGuideScreen.kt` (full category + grid TV guide) | ✅ Done |
-| `Navigation.kt` GuideGrid route | ✅ Done |
-| `ChannelBrowserScreen.kt` TV Guide button | ✅ Done |
-| `TVGuideScreen.kt` deduplication cleanup | ✅ Done |
-| APK rebuilt and tested on emulator | ❌ Not done — next action |
+## Runtime state
+- Python server: RUNNING (old code — `-bsf:v dump_extra` not yet active)
+- Android emulator: RUNNING, app installed (latest APK with removed `onPlayerError` listener)
+- APK: Built and installed. Current on emulator.
+
+## Symptoms remaining after all fixes
+1. Video plays faster than 1× — root cause not yet isolated
+2. Green overlay flashes — fix deployed in code but server not restarted to apply
+3. Periodic skipping/halting — may be emulator audio simulation artifact
 
 ## Next action
-Build the APK and test end-to-end on the `Television_1080p` emulator. All code is written; no further edits are expected before testing.
+Restart Python server → retest → ffprobe segment PTS analysis → remove `avoid_negative_ts` if PTS clean.
 </current_state>

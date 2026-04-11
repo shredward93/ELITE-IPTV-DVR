@@ -219,7 +219,7 @@ fun EpgGuideScreen(
                             viewModel.scheduleRecording(
                                 channelId    = ch.id,
                                 channelName  = ch.name,
-                                startTime    = listing.start,
+                                startTime    = listing.start ?: "",
                                 durationMins = epgDurationMins(listing.start, listing.stop),
                             )
                             scheduleStatus = "Scheduled."
@@ -374,7 +374,7 @@ private fun GuideChannelRow(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding      = PaddingValues(end = 8.dp),
             ) {
-                items(visible, key = { it.start }) { listing ->
+                items(visible, key = { it.start ?: it.title }) { listing ->
                     val startMs      = parseEpgMs(listing.start)
                     val stopMs       = parseEpgMs(listing.stop)
                     val clampedStart = maxOf(startMs, windowStartMs)
@@ -443,24 +443,33 @@ private val _epgSdf = ThreadLocal.withInitial {
     }
 }
 
-internal fun parseEpgMs(raw: String): Long = try {
-    _epgSdf.get()!!.parse(raw.trim().take(14))?.time ?: 0L
-} catch (_: Exception) { 0L }
+internal fun parseEpgMs(raw: String?): Long {
+    if (raw == null) return 0L
+    return try {
+        _epgSdf.get()!!.parse(raw.trim().take(14))?.time ?: 0L
+    } catch (_: Exception) { 0L }
+}
 
 private fun formatMs(ms: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 
-internal fun formatEpgTime(raw: String): String = try {
-    val s = raw.trim()
-    "${s.substring(8, 10)}:${s.substring(10, 12)}"
-} catch (_: Exception) { raw }
+internal fun formatEpgTime(raw: String?): String {
+    if (raw == null) return "--:--"
+    return try {
+        val s = raw.trim()
+        "${s.substring(8, 10)}:${s.substring(10, 12)}"
+    } catch (_: Exception) { raw }
+}
 
-internal fun epgDurationMins(start: String, stop: String): Int = try {
-    fun toMins(s: String): Long {
-        val h = s.substring(8, 10).toLong()
-        val m = s.substring(10, 12).toLong()
-        val d = s.substring(6, 8).toLong()
-        return d * 1440 + h * 60 + m
-    }
-    (toMins(stop) - toMins(start)).coerceAtLeast(30).toInt()
-} catch (_: Exception) { 60 }
+internal fun epgDurationMins(start: String?, stop: String?): Int {
+    if (start == null || stop == null) return 60
+    return try {
+        fun toMins(s: String): Long {
+            val h = s.substring(8, 10).toLong()
+            val m = s.substring(10, 12).toLong()
+            val d = s.substring(6, 8).toLong()
+            return d * 1440 + h * 60 + m
+        }
+        (toMins(stop) - toMins(start)).coerceAtLeast(30).toInt()
+    } catch (_: Exception) { 60 }
+}

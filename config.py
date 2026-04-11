@@ -25,6 +25,11 @@ SETTINGS_FILE    = os.path.join(_APP_DIR, "settings.json")
 
 WEB_PORT = 8080
 
+# DVR settings — overridden by core.dvr_settings.load_dvr_settings()
+DVR_BUFFER_DIR = os.path.join(_APP_DIR, "dvr_buffer")
+DVR_MAX_HOURS  = 6
+DVR_MAX_GB     = 50
+
 # Mutable credential globals — populated by core.credentials.load_credentials()
 SERVER_URL            = ""
 USERNAME              = ""

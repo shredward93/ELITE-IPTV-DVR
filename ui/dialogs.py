@@ -6,11 +6,13 @@ via core.credentials.save_credentials() so both disk and in-memory
 globals stay in sync.
 """
 
+import json
 import os
 import sys
 import webbrowser
 
 import customtkinter as ctk
+import tkinter.filedialog as fd
 
 import config
 from core.credentials import save_credentials
@@ -219,7 +221,7 @@ class CredentialsDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self._on_save = on_save
         self.title("Account Settings")
-        self.geometry("440x640")
+        self.geometry("440x880")
         self.resizable(False, True)
         self.grab_set()
         self.lift()
@@ -283,6 +285,51 @@ class CredentialsDialog(ctk.CTkToplevel):
                       fg_color="#c0392b", hover_color="#e74c3c",
                       command=self._save_tunnel).pack(fill="x", pady=(0, 10))
 
+        ctk.CTkFrame(self, height=1, fg_color="#484949").pack(fill="x", padx=28, pady=(8, 12))
+
+        ctk.CTkLabel(self, text="DVR Settings",
+                     font=("Arial", 14, "bold"), anchor="w").pack(fill="x", padx=28, pady=(0, 6))
+
+        df = ctk.CTkFrame(self, fg_color="transparent")
+        df.pack(fill="x", padx=28)
+
+        ctk.CTkLabel(df, text="Buffer Folder  (rolling live segments — separate from recordings)",
+                     anchor="w", text_color="gray60", font=("Arial", 10)).pack(fill="x", pady=(0, 2))
+        dir_row = ctk.CTkFrame(df, fg_color="transparent")
+        dir_row.pack(fill="x", pady=(0, 10))
+        self._dvr_dir = ctk.CTkEntry(dir_row, placeholder_text=config.DVR_BUFFER_DIR)
+        self._dvr_dir.pack(side="left", fill="x", expand=True)
+        self._dvr_dir.insert(0, config.DVR_BUFFER_DIR)
+        ctk.CTkButton(dir_row, text="Browse…", width=90,
+                      command=self._pick_dvr_dir).pack(side="right", padx=(6, 0))
+
+        caps_row = ctk.CTkFrame(df, fg_color="transparent")
+        caps_row.pack(fill="x", pady=(0, 6))
+
+        left_cap = ctk.CTkFrame(caps_row, fg_color="transparent")
+        left_cap.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkLabel(left_cap, text="Max buffer hours", anchor="w").pack(fill="x")
+        self._dvr_hours = ctk.CTkEntry(left_cap, placeholder_text="6")
+        self._dvr_hours.pack(fill="x")
+        self._dvr_hours.insert(0, str(config.DVR_MAX_HOURS))
+
+        right_cap = ctk.CTkFrame(caps_row, fg_color="transparent")
+        right_cap.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(right_cap, text="Max storage (GB)", anchor="w").pack(fill="x")
+        self._dvr_gb = ctk.CTkEntry(right_cap, placeholder_text="50")
+        self._dvr_gb.pack(fill="x")
+        self._dvr_gb.insert(0, str(config.DVR_MAX_GB))
+
+        ctk.CTkLabel(df, text="Both caps are enforced — the first limit reached triggers cleanup.",
+                     text_color="gray40", font=("Arial", 10), anchor="w").pack(fill="x", pady=(4, 6))
+
+        self._dvr_msg = ctk.CTkLabel(df, text="", font=("Arial", 11), anchor="w")
+        self._dvr_msg.pack(fill="x", pady=(0, 4))
+
+        ctk.CTkButton(df, text="Save DVR Settings",
+                      fg_color="#484949", hover_color="#575959",
+                      command=self._save_dvr).pack(fill="x", pady=(0, 10))
+
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.pack(fill="x", padx=28, pady=(0, 20))
         ctk.CTkButton(btns, text="Close",
@@ -310,3 +357,41 @@ class CredentialsDialog(ctk.CTkToplevel):
         )
         self.destroy()
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def _pick_dvr_dir(self):
+        path = fd.askdirectory(initialdir=self._dvr_dir.get() or config.DVR_BUFFER_DIR)
+        if path:
+            self._dvr_dir.delete(0, "end")
+            self._dvr_dir.insert(0, path)
+
+    def _save_dvr(self):
+        buf_dir = self._dvr_dir.get().strip()
+        try:
+            max_hours = int(self._dvr_hours.get().strip())
+            max_gb    = int(self._dvr_gb.get().strip())
+            if max_hours < 1 or max_gb < 1:
+                raise ValueError
+        except (ValueError, TypeError):
+            self._dvr_msg.configure(text="Hours and GB must be whole numbers ≥ 1.", text_color="#e74c3c")
+            return
+
+        config.DVR_BUFFER_DIR = buf_dir if buf_dir else config.DVR_BUFFER_DIR
+        config.DVR_MAX_HOURS  = max_hours
+        config.DVR_MAX_GB     = max_gb
+
+        # Merge with existing settings.json so output_dir is preserved.
+        data = {}
+        try:
+            with open(config.SETTINGS_FILE) as f:
+                data = json.load(f)
+        except Exception:
+            pass
+        data["dvr_buffer_dir"] = config.DVR_BUFFER_DIR
+        data["dvr_max_hours"]  = config.DVR_MAX_HOURS
+        data["dvr_max_gb"]     = config.DVR_MAX_GB
+        try:
+            with open(config.SETTINGS_FILE, "w") as f:
+                json.dump(data, f, indent=2)
+            self._dvr_msg.configure(text="DVR settings saved.", text_color="#2ecc71")
+        except Exception as e:
+            self._dvr_msg.configure(text=f"Could not save: {e}", text_color="#e74c3c")

@@ -20,6 +20,7 @@ import requests
 import config
 from core.credentials import load_credentials
 from core.favorites import load_favorites, save_favorites
+from core.dvr_manager import DVRManager
 from core.recorder import RecordingJob, run_job
 from core.tunnel import TunnelManager
 from core.web_server import WebContext, start_web_server
@@ -51,6 +52,7 @@ class IPTVRecorderApp(ctk.CTk):
         self.all_channel_names     = []
         self.recording_jobs        = []
         self.output_dir            = config._APP_DIR
+        self.dvr_manager           = DVRManager()
         self._load_settings()
         self.m3u_text              = ""
         self._fetch_start          = datetime.datetime.now()
@@ -328,6 +330,18 @@ class IPTVRecorderApp(ctk.CTk):
                 data = json.load(f)
             if "output_dir" in data and os.path.isdir(data["output_dir"]):
                 self.output_dir = data["output_dir"]
+            if "dvr_buffer_dir" in data and data["dvr_buffer_dir"]:
+                config.DVR_BUFFER_DIR = data["dvr_buffer_dir"]
+            if "dvr_max_hours" in data:
+                try:
+                    config.DVR_MAX_HOURS = int(data["dvr_max_hours"])
+                except (ValueError, TypeError):
+                    pass
+            if "dvr_max_gb" in data:
+                try:
+                    config.DVR_MAX_GB = int(data["dvr_max_gb"])
+                except (ValueError, TypeError):
+                    pass
         except Exception:
             pass
 
@@ -335,7 +349,12 @@ class IPTVRecorderApp(ctk.CTk):
         try:
             import json
             with open(config.SETTINGS_FILE, "w") as f:
-                json.dump({"output_dir": self.output_dir}, f, indent=2)
+                json.dump({
+                    "output_dir":     self.output_dir,
+                    "dvr_buffer_dir": config.DVR_BUFFER_DIR,
+                    "dvr_max_hours":  config.DVR_MAX_HOURS,
+                    "dvr_max_gb":     config.DVR_MAX_GB,
+                }, f, indent=2)
         except Exception:
             pass
 
@@ -404,6 +423,13 @@ class IPTVRecorderApp(ctk.CTk):
             get_favorites_fn=lambda: list(self.favorites),
             get_log_fn=lambda: list(self._log_entries),
             action_queue=self._web_actions,
+            dvr_manager=self.dvr_manager,
+            get_all_channels_fn=lambda: [
+                {"name": n, "id": self.channel_map[n]}
+                for n in self.all_channel_names
+            ],
+            get_jobs_fn=lambda: list(self.recording_jobs),
+            get_recordings_dir_fn=lambda: self.output_dir,
         )
         try:
             url = start_web_server(ctx)

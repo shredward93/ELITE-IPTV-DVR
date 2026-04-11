@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec
+credentials.json
+favorites.json
+settings.json
+*.ts
+*.mp4
+dvr_buffer/
+recordings/
+.env

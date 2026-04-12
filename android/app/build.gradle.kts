@@ -69,9 +69,6 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.3.0")
     implementation("androidx.media3:media3-common:1.3.0")
 
-    // libVLC for a diagnostic alternative live playback path
-    implementation("org.videolan.android:libvlc-all:4.0.0-eap23")
-
     // Retrofit + OkHttp
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")

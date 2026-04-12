@@ -1,7 +1,14 @@
 package com.elite.iptv.dvr.ui.player
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer as AndroidMediaPlayer
+import android.net.Uri
+import android.util.Log
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,28 +24,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import android.net.Uri
-import android.util.Log
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.viewmodel.MainViewModel
-import androidx.compose.ui.platform.LocalContext
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.util.VLCVideoLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,47 +53,104 @@ fun PlayerScreen(
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
+    var surfaceView by remember { mutableStateOf<SurfaceView?>(null) }
 
-    val libVlc = remember {
-        LibVLC(
-            context,
-            arrayListOf(
-                "--network-caching=3000",
-                "--live-caching=3000",
-                "--clock-jitter=0",
-                "--clock-synchro=0",
-            ),
-        )
-    }
-
-    val mediaPlayer = remember { MediaPlayer(libVlc) }
+    val mediaPlayer = remember { AndroidMediaPlayer() }
     val cleanupScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
 
-    DisposableEffect(mediaPlayer) {
-        val listener = object : MediaPlayer.EventListener {
-            override fun onEvent(event: MediaPlayer.Event) {
-                Log.d("ElitePlayer", "libVLC event=$event")
+    val surfaceCallback = remember(mediaPlayer) {
+        object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                Log.d("ElitePlayer", "Surface created")
+                surfaceHolder = holder
+                runCatching { mediaPlayer.setSurface(holder.surface) }
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                Log.d("ElitePlayer", "Surface changed format=$format width=$width height=$height")
+                surfaceHolder = holder
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                Log.d("ElitePlayer", "Surface destroyed")
+                if (surfaceHolder == holder) {
+                    surfaceHolder = null
+                }
             }
         }
+    }
 
-        mediaPlayer.setEventListener(listener)
+    DisposableEffect(mediaPlayer) {
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build()
+
+        runCatching { mediaPlayer.setAudioAttributes(attrs) }
+
+        mediaPlayer.setOnPreparedListener { mp ->
+            Log.d("ElitePlayer", "Android MediaPlayer prepared")
+            isLoading = false
+            isPlaying = true
+            runCatching { mp.start() }
+        }
+
+        mediaPlayer.setOnCompletionListener {
+            Log.d("ElitePlayer", "Android MediaPlayer completed")
+            isPlaying = false
+            isLoading = false
+        }
+
+        mediaPlayer.setOnErrorListener { _, what, extra ->
+            Log.e("ElitePlayer", "Android MediaPlayer error what=$what extra=$extra")
+            error = "Playback error ($what/$extra)"
+            isLoading = false
+            isPlaying = false
+            viewModel.stopDvrAsync()
+            true
+        }
+
+        mediaPlayer.setOnInfoListener { _, what, extra ->
+            Log.d("ElitePlayer", "Android MediaPlayer info what=$what extra=$extra")
+            false
+        }
+
+        mediaPlayer.setOnVideoSizeChangedListener { _, width, height ->
+            Log.d("ElitePlayer", "Android MediaPlayer video size width=$width height=$height")
+        }
+
         onDispose {
             viewModel.stopDvrAsync()
             cleanupScope.launch {
-                runCatching { mediaPlayer.setEventListener(null) }
-                runCatching { mediaPlayer.stop() }
-                runCatching { mediaPlayer.detachViews() }
-                runCatching { mediaPlayer.media = null }
-                runCatching { mediaPlayer.release() }
-                runCatching { libVlc.release() }
-                runCatching { cleanupScope.cancel() }
+                try {
+                    runCatching { mediaPlayer.setOnPreparedListener(null) }
+                    runCatching { mediaPlayer.setOnCompletionListener(null) }
+                    runCatching { mediaPlayer.setOnErrorListener(null) }
+                    runCatching { mediaPlayer.setOnInfoListener(null) }
+                    runCatching { mediaPlayer.setOnVideoSizeChangedListener(null) }
+                    runCatching { mediaPlayer.stop() }
+                    runCatching { mediaPlayer.reset() }
+                    runCatching { mediaPlayer.setSurface(null) }
+                    runCatching { mediaPlayer.release() }
+                } finally {
+                    runCatching { cleanupScope.cancel() }
+                }
             }
+        }
+    }
+
+    DisposableEffect(surfaceView) {
+        onDispose {
+            surfaceView?.holder?.removeCallback(surfaceCallback)
         }
     }
 
     LaunchedEffect(channelId) {
         isLoading = true
         error = null
+        isPlaying = false
 
         try {
             viewModel.startDvr(channelId, channelName)
@@ -102,12 +161,15 @@ fun PlayerScreen(
         }
 
         // Wait for FFmpeg to produce at least 2 segments so the HLS manifest
-        // is populated and ExoPlayer has something to start playing immediately.
+        // is populated and the player has something to start playing immediately.
         var ready = false
         repeat(25) {
             delay(800)
             val segs = runCatching { viewModel.getDvrSegments() }.getOrElse { emptyList() }
-            if (segs.size >= 2) { ready = true; return@repeat }
+            if (segs.size >= 2) {
+                ready = true
+                return@repeat
+            }
         }
 
         if (!ready) {
@@ -116,28 +178,42 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        val playlistUrl = ApiClient.dvrPlaylistUrl(viewModel.pcUrl)
-        val media = Media(libVlc, Uri.parse(playlistUrl)).apply {
-            addOption(":network-caching=3000")
-            addOption(":live-caching=3000")
-            addOption(":clock-jitter=0")
-            addOption(":clock-synchro=0")
+        var holder: SurfaceHolder? = null
+        repeat(25) {
+            delay(100)
+            holder = surfaceHolder
+            if (holder?.surface?.isValid == true) {
+                return@repeat
+            }
         }
 
-        try {
-            runCatching { mediaPlayer.stop() }
-            mediaPlayer.media = media
-            mediaPlayer.play()
-            Log.d("ElitePlayer", "libVLC play requested url=$playlistUrl")
-        } catch (e: Exception) {
-            error = "Failed to start VLC playback: ${e.message}"
+        if (holder?.surface?.isValid != true) {
+            error = "Video surface not ready."
             isLoading = false
             return@LaunchedEffect
-        } finally {
-            media.release()
         }
 
-        isLoading = false
+        val playlistUrl = ApiClient.dvrPlaylistUrl(viewModel.pcUrl)
+
+        try {
+            runCatching { mediaPlayer.reset() }
+            runCatching { mediaPlayer.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+            ) }
+            runCatching { mediaPlayer.setSurface(holder!!.surface) }
+            mediaPlayer.setDataSource(context, Uri.parse(playlistUrl))
+            mediaPlayer.prepareAsync()
+            Log.d("ElitePlayer", "Android MediaPlayer prepare requested url=$playlistUrl")
+        } catch (e: Exception) {
+            error = "Failed to start playback: ${e.message}"
+            isLoading = false
+            isPlaying = false
+            viewModel.stopDvrAsync()
+            return@LaunchedEffect
+        }
     }
 
     BackHandler { onBack() }
@@ -148,7 +224,12 @@ fun PlayerScreen(
             .background(Color.Black),
     ) {
         AndroidView(
-            factory = { ctx -> VLCVideoLayout(ctx).also { runCatching { mediaPlayer.attachViews(it, null, false, false) } } },
+            factory = { ctx ->
+                SurfaceView(ctx).also { view ->
+                    surfaceView = view
+                    view.holder.addCallback(surfaceCallback)
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -156,10 +237,34 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(onClick = onBack) {
                 Text("Back")
             }
+
+            Button(
+                enabled = !isLoading && error == null,
+                onClick = {
+                    if (mediaPlayer.isPlaying) {
+                        runCatching { mediaPlayer.pause() }
+                        isPlaying = false
+                    } else {
+                        runCatching { mediaPlayer.start() }
+                        isPlaying = true
+                    }
+                },
+            ) {
+                Text(if (isPlaying) "Pause" else "Play")
+            }
+
+            Text(
+                text = channelName,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
 
         if (isLoading) {

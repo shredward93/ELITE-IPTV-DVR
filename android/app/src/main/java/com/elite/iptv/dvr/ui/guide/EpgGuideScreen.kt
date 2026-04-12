@@ -88,7 +88,9 @@ fun EpgGuideScreen(
     val windowStartMs = nowMs - PRE_MINS * 60_000L
 
     LaunchedEffect(Unit) {
-        viewModel.loadGuideBundle()
+        if (viewModel.categoryChannels.isEmpty()) {
+            viewModel.loadGuideBundle()
+        }
     }
 
     LaunchedEffect(viewModel.categories) {
@@ -99,8 +101,17 @@ fun EpgGuideScreen(
 
     LaunchedEffect(selectedCategory) {
         val cat = selectedCategory ?: return@LaunchedEffect
-        if (viewModel.lastGuideCategoryId != cat.categoryId || viewModel.categoryChannels.isEmpty()) {
+        val alreadyLoaded = viewModel.lastGuideCategoryId == cat.categoryId && viewModel.categoryChannels.isNotEmpty()
+        if (!alreadyLoaded) {
             viewModel.loadGuideBundle(cat.categoryId)
+        }
+    }
+
+    // If the backend is still downloading XMLTV, retry every 8 s until EPG arrives
+    LaunchedEffect(viewModel.guideBundleSource) {
+        if (viewModel.guideBundleSource == "loading") {
+            kotlinx.coroutines.delay(8_000L)
+            viewModel.loadGuideBundle(selectedCategory?.categoryId, refresh = true)
         }
     }
 

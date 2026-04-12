@@ -39,6 +39,13 @@ interface ApiService {
     @GET("api/channels/by-category")
     suspend fun getChannelsByCategory(@Query("category_id") categoryId: String): List<Channel>
 
+    @GET("api/guide")
+    suspend fun getGuide(
+        @Query("category_id") categoryId: String? = null,
+        @Query("limit") limit: Int = 24,
+        @Query("refresh") refresh: Boolean = false,
+    ): GuideBundle
+
     @GET("api/epg/multi")
     suspend fun getMultiEpg(
         @Query("channel_ids") channelIds: String,

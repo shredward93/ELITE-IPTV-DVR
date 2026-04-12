@@ -165,7 +165,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadGuideBundle(categoryId: String? = null, limit: Int = 24, refresh: Boolean = false) {
         val normalizedCategoryId = categoryId?.trim().orEmpty()
-        if (!refresh && lastGuideCategoryId == normalizedCategoryId && guideEpg.isNotEmpty() && lastGuideLimit >= limit) return
+        val resolvedId = normalizedCategoryId.ifBlank { lastGuideCategoryId ?: "" }
+        if (!refresh && guideBundleLoading) return
+        if (!refresh && resolvedId == (lastGuideCategoryId ?: "") && categoryChannels.isNotEmpty() && lastGuideLimit >= limit) return
 
         guideBundleLoading = true
         viewModelScope.launch {

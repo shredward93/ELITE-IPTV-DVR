@@ -12,6 +12,7 @@ import sys
 import threading
 import webbrowser
 
+import requests
 import customtkinter as ctk
 import tkinter.filedialog as fd
 import tkinter.messagebox as mb

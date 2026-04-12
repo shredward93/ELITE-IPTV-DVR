@@ -102,3 +102,13 @@ data class ChannelEpg(
     @SerializedName("channel_id") val channelId: String,
     val listings: List<EpgListing>,
 )
+
+data class GuideBundle(
+    val source: String,
+    @SerializedName("category_id") val categoryId: String,
+    val categories: List<Category>,
+    val channels: List<Channel>,
+    @SerializedName("guide_epg") val guideEpg: Map<String, List<EpgListing>>,
+    @SerializedName("generated_at") val generatedAt: Long,
+    @SerializedName("refresh_after_ms") val refreshAfterMs: Long,
+)

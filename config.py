@@ -25,6 +25,15 @@ SETTINGS_FILE    = os.path.join(_APP_DIR, "settings.json")
 
 WEB_PORT = 8080
 
+# Guide / EPG refresh cadence. Default to twice per day so the backend can
+# keep guide data fresh without reloading it on every screen visit.
+GUIDE_CACHE_TTL_SECONDS = int(os.getenv("GUIDE_CACHE_TTL_SECONDS", str(12 * 60 * 60)))
+
+# Optional XMLTV hooks for future backend guide sources.
+XMLTV_SOURCE_URL  = os.getenv("XMLTV_SOURCE_URL", "").strip()
+XMLTV_SOURCE_PATH = os.getenv("XMLTV_SOURCE_PATH", "").strip()
+XMLTV_CACHE_PATH  = os.path.join(_APP_DIR, "xmltv_cache.xml")
+
 # DVR settings — overridden by core.dvr_settings.load_dvr_settings()
 DVR_BUFFER_DIR = os.path.join(_APP_DIR, "dvr_buffer")
 DVR_MAX_HOURS  = 6

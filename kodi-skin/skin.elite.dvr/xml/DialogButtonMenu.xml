@@ -7,6 +7,9 @@
     </coordinates>
     <controls>
         
+        <!-- Full Screen Background -->
+        <include>elite_background</include>
+
         <!-- Dark Overlay -->
         <control type="image">
             <left>0</left>

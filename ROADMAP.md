@@ -129,7 +129,8 @@ The PVR addon (`pvr.eliteiptv`) provides:
 - **Recording** — Kodi's record button calls your server's API
 
 **Files:**
-- `kodi-addon/pvr.eliteiptv/` — PVR addon (C++/Python hybrid)
+- `kodi-addon/pvr.eliteiptv/` — Native PVR addon source scaffold
+- `kodi-addon/pvr.eliteiptv/` — PVR addon source tree (native Kodi PVR client)
 - `kodi-skin/skin.elite.dvr/` — Custom skin with gold/orange ELITE branding
 
 #### `/api/info` shape
@@ -245,7 +246,7 @@ class WebContext:
 - [x] Basic video addon (`plugin.video.eliteiptv`) — Channel browser + DVR play
 
 ### Phase 2: Full PVR Backend Addon ⏳ Current
-- [ ] PVR addon (`pvr.eliteiptv`) — Native Kodi PVR client
+- [x] PVR addon project scaffold (`pvr.eliteiptv`) — Native Kodi PVR client source layout
 - [ ] Implement `GetChannels()`, `GetEPGForChannel()`, `Record()` callbacks
 - [ ] Wire Kodi's "Record" button to `POST /api/schedule`
 - [ ] Support pause/rewind via DVR HLS option

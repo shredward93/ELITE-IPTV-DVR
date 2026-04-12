@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+    <category label="Server">
+        <setting id="server_ip" type="ipaddress" label="Server IP" default="192.168.1.100"/>
+        <setting id="server_port" type="number" label="Server Port" default="8080"/>
+    </category>
+    <category label="Playback">
+        <setting id="default_mode" type="select" label="Default Playback Mode" values="Live Proxy|DVR Buffer" default="Live Proxy"/>
+        <setting id="auto_dvr" type="bool" label="Auto-start DVR Buffer" default="false"/>
+    </category>
+</settings>

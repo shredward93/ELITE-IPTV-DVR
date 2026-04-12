@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="pvr.eliteiptv" version="@APP_VERSION@" name="ELITE IPTV DVR PVR" provider-name="ELITE">
+    <requires>
+        <import addon="xbmc.addon" version="21.0.0"/>
+        <import addon="xbmc.pvr" version="8.4.0"/>
+    </requires>
+    <extension point="kodi.pvrclient" library="pvr.eliteiptv">
+        <provides>livetv epg recordings timers</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>ELITE IPTV DVR PVR Client</summary>
+        <description>Native Kodi PVR client for ELITE IPTV DVR with PC-based recording, guide data, and live TV proxy playback.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+    </extension>
+</addon>

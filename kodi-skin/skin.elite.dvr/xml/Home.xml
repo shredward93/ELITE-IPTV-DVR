@@ -4,8 +4,23 @@
     <allowoverlay>no</allowoverlay>
     <controls>
         
-        <!-- Background -->
-        <include>elite_background</include>
+        <!-- Full Screen Background -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>elite_home_bg.png</texture>
+        </control>
+        
+        <!-- Optional: Dark overlay for better text readability -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="80000000">white.png</texture>
+        </control>
         
         <!-- Header with Logo -->
         <include>elite_header</include>

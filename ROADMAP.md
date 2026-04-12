@@ -2,9 +2,13 @@
 
 ## Strategic Goals
 
-1. **Backend Modularization** — Split `iptv_recorder.py` (~2100 lines) into clean, independently editable modules
-2. **Frontend Modernization** — Expand the existing web remote into the primary UI; CTk becomes a background service
-3. **Android TV Companion App** — Native Android TV player that uses the PC app as its backend brain (scheduling, FFmpeg, credentials)
+1. **Backend Modularization** — Split `iptv_recorder.py` (~2100 lines) into clean, independently editable modules ✅ Complete
+2. **Frontend Modernization** — Expand the existing web remote into the primary UI; CTk becomes a background service ✅ Complete
+3. **Kodi PVR Integration** — Native Kodi PVR addon + custom ELITE skin for TiviMate-like experience with PC-based recording
+   - PVR addon with full grid guide
+   - Pause/rewind live TV via DVR buffer
+   - One-click recording to PC hard drive
+   - Custom ELITE skin for consistent branding
 
 ---
 
@@ -50,17 +54,31 @@ Transition steps (future, non-blocking):
 
 ---
 
-## Android TV — Stream Playback Decision
+## Kodi PVR — Stream & Recording Architecture
 
 **PC proxies the stream. No direct URL exposure.**
 
-XtreamCodes stream URLs contain credentials in plaintext (`/live/USERNAME/PASSWORD/id.ts`). If the Android TV receives the URL directly, credentials appear in ExoPlayer logs and Android system network logs.
+XtreamCodes stream URLs contain credentials in plaintext (`/live/USERNAME/PASSWORD/id.ts`). Kodi never sees the raw URL — only your server's proxy endpoints.
 
 With PC proxying via `GET /api/stream/live?channel_id=X`:
 - Credentials never leave the PC
-- TV only knows the local LAN IP:port
+- Kodi only knows the local LAN IP:port
 - Access is scoped to local network (or InstaTunnel session)
-- Hop overhead on LAN is negligible — ExoPlayer fills its buffer in under 1 second
+- Hop overhead on LAN is negligible — Kodi fills its buffer in under 1 second
+
+### Recording Flow
+
+```
+Kodi PVR Guide → User clicks "Record"
+               ↓
+         PVR Addon calls POST /api/schedule
+               ↓
+         Server starts FFmpeg recording
+               ↓
+         Recording saved to PC: recordings/ folder
+```
+
+Kodi's native "Record" button is wired to your server's API — recordings land on the PC, not the Android TV.
 
 ---
 
@@ -85,16 +103,34 @@ All responses JSON. All POST bodies JSON.
 | `POST` | `/api/backup/set` | `{id, name}` |
 | `POST` | `/api/backup/clear` | `{}` |
 
-### New Endpoints (Android TV)
+### New Endpoints (Kodi Integration)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/api/info` | Version, capabilities, channel count |
 | `GET` | `/api/channels/all` | Full channel list for TV guide |
 | `GET` | `/api/recordings` | Active + recent jobs (cleaner than status blob) |
-| `GET` | `/api/stream/url?channel_id=` | Returns proxy URL for ExoPlayer |
-| `GET` | `/api/stream/live?channel_id=` | PC fetches `.ts` and pipes to client |
+| `GET` | `/api/stream/url?channel_id=` | Returns proxy URL for Kodi player |
+| `GET` | `/api/stream/live?channel_id=` | PC fetches `.ts` and pipes to Kodi |
 | `POST` | `/api/record` | Start recording immediately (alias for schedule NOW) |
+| `GET` | `/kodi/playlist.m3u` | M3U playlist with proxy URLs for PVR |
+| `GET` | `/kodi/guide.xml` | XMLTV EPG data for PVR guide |
+| `GET` | `/dvr/playlist.m3u8` | HLS playlist for pause/rewind live TV |
+| `POST` | `/dvr/start` | Start DVR buffer for a channel |
+| `POST` | `/dvr/stop` | Stop DVR buffer |
+| `GET` | `/dvr/status` | DVR buffer status |
+
+### PVR Addon (Kodi) Architecture
+
+The PVR addon (`pvr.eliteiptv`) provides:
+- **Channel list** — Populates Kodi's TV section with all channels
+- **EPG guide** — Grid timeline with show titles, times, descriptions
+- **Live playback** — Proxy stream or DVR HLS (user choice)
+- **Recording** — Kodi's record button calls your server's API
+
+**Files:**
+- `kodi-addon/pvr.eliteiptv/` — PVR addon (C++/Python hybrid)
+- `kodi-skin/skin.elite.dvr/` — Custom skin with gold/orange ELITE branding
 
 #### `/api/info` shape
 ```json
@@ -201,13 +237,34 @@ class WebContext:
 
 ---
 
-## Android TV App (Future Repo)
+## Kodi PVR Integration (Active Development)
 
-Once the modular backend is in place and the `/api/*` contract above is stable:
+### Phase 1: Core PVR Addon ✅ Complete
+- [x] `/kodi/playlist.m3u` endpoint — M3U with proxy URLs
+- [x] `/kodi/guide.xml` endpoint — XMLTV EPG data
+- [x] Basic video addon (`plugin.video.eliteiptv`) — Channel browser + DVR play
 
-- **Language:** Kotlin
-- **Player:** ExoPlayer (points at `/api/stream/live?channel_id=X`)
-- **UI:** Leanback library for TV-optimized channel guide and EPG grid
-- **Scheduling:** Uses `POST /api/schedule` and `GET /api/recordings`
-- **Discovery:** User enters PC's local IP (or InstaTunnel URL) in TV app settings
-- **Auth:** Initially none (LAN-only trust); InstaTunnel provides the security boundary
+### Phase 2: Full PVR Backend Addon ⏳ Current
+- [ ] PVR addon (`pvr.eliteiptv`) — Native Kodi PVR client
+- [ ] Implement `GetChannels()`, `GetEPGForChannel()`, `Record()` callbacks
+- [ ] Wire Kodi's "Record" button to `POST /api/schedule`
+- [ ] Support pause/rewind via DVR HLS option
+
+### Phase 3: Custom Skin Polish ⏳ Pending
+- [ ] Finish `skin.elite.dvr` textures (panel_rounded.png, etc.)
+- [ ] Test PVR guide rendering with custom skin
+- [ ] Ensure focused states are visible from couch distance
+
+### Phase 4: TiviMate Parity ⏳ Future
+- [ ] Auto-start DVR buffer on channel tune (configurable)
+- [ ] Record series/season passes via Kodi timer interface
+- [ ] Thumbnail/poster art in guide grid
+- [ ] Channel groups/favorites synced with server
+
+### Setup Instructions (Future)
+
+1. Install Kodi on Android TV (ONN 4K Pro or any Android TV)
+2. Install ELITE IPTV DVR PVR addon
+3. Configure addon with PC server IP:port
+4. Activate ELITE skin (optional but recommended)
+5. Go to TV → Guide — full TiviMate-like experience

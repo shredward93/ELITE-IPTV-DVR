@@ -3,13 +3,23 @@
     <defaultcontrol>10</defaultcontrol>
     <controls>
         
-        <!-- Black Background -->
+        <!-- Full Screen Background -->
         <control type="image">
             <left>0</left>
             <top>0</top>
             <width>1920</width>
             <height>1080</height>
-            <texture colordiffuse="FF000000">white.png</texture>
+            <texture>elite_home_bg.png</texture>
+        </control>
+        
+        <!-- Dark overlay for logo contrast -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="B3000000">white.png</texture>
+            <animation effect="fade" start="100" end="70" time="1000" condition="true">Conditional</animation>
         </control>
         
         <!-- Logo Animation Group -->

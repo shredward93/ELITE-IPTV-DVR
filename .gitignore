@@ -10,6 +10,7 @@ build/
 credentials.json
 favorites.json
 settings.json
+!.vscode/settings.json
 *.ts
 *.mp4
 dvr_buffer/

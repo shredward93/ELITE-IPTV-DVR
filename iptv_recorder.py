@@ -4,7 +4,6 @@ import tkinter.messagebox as mb
 import subprocess
 import threading
 import datetime
-import base64
 import time
 import requests
 import os
@@ -17,6 +16,8 @@ import socket
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+from core.epg import fetch_epg
 
 APP_VERSION = "1.0.0"
 
@@ -1771,17 +1772,16 @@ class IPTVRecorderApp(ctk.CTk):
             )
 
     def _fetch_epg(self, channel_id):
-        url = (
-            f"{SERVER_URL}/player_api.php?username={USERNAME}&password={PASSWORD}"
-            f"&action=get_short_epg&stream_id={channel_id}&limit=16"
-        )
         try:
-            r = requests.get(url, timeout=8)
-            self._epg_result = (channel_id, r.json().get("epg_listings", []))
+            self._epg_result = (
+                channel_id,
+                fetch_epg(SERVER_URL, USERNAME, PASSWORD, channel_id, limit=16),
+            )
         except Exception:
             self._epg_result = (channel_id, None)
 
     def _decode_epg(self, text):
+        import base64
         try:
             return base64.b64decode(text).decode("utf-8").strip()
         except Exception:

@@ -15,10 +15,10 @@ import webbrowser
 import customtkinter as ctk
 import tkinter.filedialog as fd
 import tkinter.messagebox as mb
-import requests
 
 import config
 from core.credentials import load_credentials
+from core.epg import fetch_epg
 from core.favorites import load_favorites, save_favorites
 from core.dvr_manager import DVRManager
 from core.recorder import RecordingJob, run_job
@@ -858,11 +858,11 @@ class IPTVRecorderApp(ctk.CTk):
             )
 
     def _fetch_epg(self, channel_id):
-        url = (f"{config.SERVER_URL}/player_api.php?username={config.USERNAME}"
-               f"&password={config.PASSWORD}&action=get_short_epg&stream_id={channel_id}&limit=16")
         try:
-            r = requests.get(url, timeout=8)
-            self._epg_result = (channel_id, r.json().get("epg_listings", []))
+            self._epg_result = (
+                channel_id,
+                fetch_epg(config.SERVER_URL, config.USERNAME, config.PASSWORD, channel_id, limit=16),
+            )
         except Exception:
             self._epg_result = (channel_id, None)
 

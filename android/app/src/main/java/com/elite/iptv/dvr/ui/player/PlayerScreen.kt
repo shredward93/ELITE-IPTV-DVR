@@ -1,11 +1,5 @@
 package com.elite.iptv.dvr.ui.player
 
-import android.media.AudioAttributes
-import android.media.MediaPlayer as AndroidMediaPlayer
-import android.net.Uri
-import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,29 +13,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.viewmodel.MainViewModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -50,171 +28,7 @@ fun PlayerScreen(
     channelName: String,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
-    var isLoading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
-    var surfaceView by remember { mutableStateOf<SurfaceView?>(null) }
-
-    val mediaPlayer = remember { AndroidMediaPlayer() }
-    val cleanupScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
-
-    val surfaceCallback = remember(mediaPlayer) {
-        object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                Log.d("ElitePlayer", "Surface created")
-                surfaceHolder = holder
-                runCatching { mediaPlayer.setSurface(holder.surface) }
-            }
-
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                Log.d("ElitePlayer", "Surface changed format=$format width=$width height=$height")
-                surfaceHolder = holder
-            }
-
-            override fun surfaceDestroyed(holder: SurfaceHolder) {
-                Log.d("ElitePlayer", "Surface destroyed")
-                if (surfaceHolder == holder) {
-                    surfaceHolder = null
-                }
-            }
-        }
-    }
-
-    DisposableEffect(mediaPlayer) {
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-            .build()
-
-        runCatching { mediaPlayer.setAudioAttributes(attrs) }
-
-        mediaPlayer.setOnPreparedListener { mp ->
-            Log.d("ElitePlayer", "Android MediaPlayer prepared")
-            isLoading = false
-            isPlaying = true
-            runCatching { mp.start() }
-        }
-
-        mediaPlayer.setOnCompletionListener {
-            Log.d("ElitePlayer", "Android MediaPlayer completed")
-            isPlaying = false
-            isLoading = false
-        }
-
-        mediaPlayer.setOnErrorListener { _, what, extra ->
-            Log.e("ElitePlayer", "Android MediaPlayer error what=$what extra=$extra")
-            error = "Playback error ($what/$extra)"
-            isLoading = false
-            isPlaying = false
-            viewModel.stopDvrAsync()
-            true
-        }
-
-        mediaPlayer.setOnInfoListener { _, what, extra ->
-            Log.d("ElitePlayer", "Android MediaPlayer info what=$what extra=$extra")
-            false
-        }
-
-        mediaPlayer.setOnVideoSizeChangedListener { _, width, height ->
-            Log.d("ElitePlayer", "Android MediaPlayer video size width=$width height=$height")
-        }
-
-        onDispose {
-            viewModel.stopDvrAsync()
-            cleanupScope.launch {
-                try {
-                    runCatching { mediaPlayer.setOnPreparedListener(null) }
-                    runCatching { mediaPlayer.setOnCompletionListener(null) }
-                    runCatching { mediaPlayer.setOnErrorListener(null) }
-                    runCatching { mediaPlayer.setOnInfoListener(null) }
-                    runCatching { mediaPlayer.setOnVideoSizeChangedListener(null) }
-                    runCatching { mediaPlayer.stop() }
-                    runCatching { mediaPlayer.reset() }
-                    runCatching { mediaPlayer.setSurface(null) }
-                    runCatching { mediaPlayer.release() }
-                } finally {
-                    runCatching { cleanupScope.cancel() }
-                }
-            }
-        }
-    }
-
-    DisposableEffect(surfaceView) {
-        onDispose {
-            surfaceView?.holder?.removeCallback(surfaceCallback)
-        }
-    }
-
-    LaunchedEffect(channelId) {
-        isLoading = true
-        error = null
-        isPlaying = false
-
-        try {
-            viewModel.startDvr(channelId, channelName)
-        } catch (e: Exception) {
-            error = "Failed to start DVR: ${e.message}"
-            isLoading = false
-            return@LaunchedEffect
-        }
-
-        // Wait for FFmpeg to produce at least 2 segments so the HLS manifest
-        // is populated and the player has something to start playing immediately.
-        var ready = false
-        repeat(25) {
-            delay(800)
-            val segs = runCatching { viewModel.getDvrSegments() }.getOrElse { emptyList() }
-            if (segs.size >= 2) {
-                ready = true
-                return@repeat
-            }
-        }
-
-        if (!ready) {
-            error = "No stream data received. Is the PC running?"
-            isLoading = false
-            return@LaunchedEffect
-        }
-
-        var holder: SurfaceHolder? = null
-        repeat(25) {
-            delay(100)
-            holder = surfaceHolder
-            if (holder?.surface?.isValid == true) {
-                return@repeat
-            }
-        }
-
-        if (holder?.surface?.isValid != true) {
-            error = "Video surface not ready."
-            isLoading = false
-            return@LaunchedEffect
-        }
-
-        val playlistUrl = ApiClient.dvrPlaylistUrl(viewModel.pcUrl)
-
-        try {
-            runCatching { mediaPlayer.reset() }
-            runCatching { mediaPlayer.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                    .build()
-            ) }
-            runCatching { mediaPlayer.setSurface(holder!!.surface) }
-            mediaPlayer.setDataSource(context, Uri.parse(playlistUrl))
-            mediaPlayer.prepareAsync()
-            Log.d("ElitePlayer", "Android MediaPlayer prepare requested url=$playlistUrl")
-        } catch (e: Exception) {
-            error = "Failed to start playback: ${e.message}"
-            isLoading = false
-            isPlaying = false
-            viewModel.stopDvrAsync()
-            return@LaunchedEffect
-        }
-    }
+    val playback = rememberLivePlaybackState(viewModel.pcUrl, channelId, logTag = "ElitePlayer")
 
     BackHandler { onBack() }
 
@@ -223,13 +37,8 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(
-            factory = { ctx ->
-                SurfaceView(ctx).also { view ->
-                    surfaceView = view
-                    view.holder.addCallback(surfaceCallback)
-                }
-            },
+        LivePlayerView(
+            player = playback.player,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -245,18 +54,18 @@ fun PlayerScreen(
             }
 
             Button(
-                enabled = !isLoading && error == null,
+                enabled = !playback.isLoading.value && playback.error.value == null,
                 onClick = {
-                    if (mediaPlayer.isPlaying) {
-                        runCatching { mediaPlayer.pause() }
-                        isPlaying = false
+                    if (playback.player.isPlaying) {
+                        playback.player.pause()
+                        playback.isPlaying.value = false
                     } else {
-                        runCatching { mediaPlayer.start() }
-                        isPlaying = true
+                        playback.player.play()
+                        playback.isPlaying.value = true
                     }
                 },
             ) {
-                Text(if (isPlaying) "Pause" else "Play")
+                Text(if (playback.isPlaying.value) "Pause" else "Play")
             }
 
             Text(
@@ -267,14 +76,14 @@ fun PlayerScreen(
             )
         }
 
-        if (isLoading) {
+        if (playback.isLoading.value) {
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 CircularProgressIndicator(color = Color(0xFFF89344))
                 Text(
-                    text = "Starting DVR buffer for $channelName…",
+                    text = "Connecting to live stream for $channelName…",
                     color = Color.White,
                     fontSize = 18.sp,
                     modifier = Modifier.padding(top = 16.dp),
@@ -282,7 +91,7 @@ fun PlayerScreen(
             }
         }
 
-        error?.let { msg ->
+        playback.error.value?.let { msg ->
             Text(
                 text = msg,
                 color = Color(0xFFE74C3C),

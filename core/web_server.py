@@ -12,7 +12,6 @@ import os
 import re
 import socket
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,7 +21,7 @@ import config
 
 # DVRManager imported for type hints only; no circular dependency risk.
 from core.dvr_manager import DVRManager
-from core.epg import decode_epg_text
+from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg
 
 
 class WebContext:
@@ -96,20 +95,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if not channel_id:
                 self._json({"listings": []})
             else:
-                try:
-                    url = (
-                        f"{config.SERVER_URL}/player_api.php"
-                        f"?username={config.USERNAME}&password={config.PASSWORD}"
-                        f"&action=get_short_epg&stream_id={channel_id}&limit=12"
-                    )
-                    r = requests.get(url, timeout=8)
-                    listings = r.json().get("epg_listings", [])
-                    for listing in listings:
-                        listing["title"]       = decode_epg_text(listing.get("title", ""))
-                        listing["description"] = decode_epg_text(listing.get("description", ""))
-                    self._json({"listings": listings})
-                except Exception:
-                    self._json({"listings": []})
+                listings = fetch_epg(config.SERVER_URL, config.USERNAME, config.PASSWORD, channel_id, limit=12)
+                self._json({"listings": listings})
 
         # ── Android TV: EPG category browser ─────────────────────────────────
         elif path == "/api/categories":
@@ -154,26 +141,28 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 self._json([])
                 return
             channel_ids = [i.strip() for i in ids_str.split(",") if i.strip()][:30]
-
-            def _fetch_one(cid):
-                try:
-                    url = (
-                        f"{config.SERVER_URL}/player_api.php"
-                        f"?username={config.USERNAME}&password={config.PASSWORD}"
-                        f"&action=get_short_epg&stream_id={cid}&limit={limit}"
-                    )
-                    resp = requests.get(url, timeout=8)
-                    listings = resp.json().get("epg_listings", [])
-                    for l in listings:
-                        l["title"]       = decode_epg_text(l.get("title", ""))
-                        l["description"] = decode_epg_text(l.get("description", ""))
-                    return {"channel_id": cid, "listings": listings}
-                except Exception:
-                    return {"channel_id": cid, "listings": []}
-
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                results = list(pool.map(_fetch_one, channel_ids))
+            results = fetch_multi_epg(
+                config.SERVER_URL,
+                config.USERNAME,
+                config.PASSWORD,
+                channel_ids,
+                limit=limit,
+            )
             self._json(results)
+
+        elif path == "/api/guide":
+            category_id = qs.get("category_id", [""])[0].strip()
+            limit = int(qs.get("limit", ["24"])[0])
+            refresh = qs.get("refresh", ["0"])[0].strip().lower() in {"1", "true", "yes", "on"}
+            bundle = build_guide_bundle(
+                config.SERVER_URL,
+                config.USERNAME,
+                config.PASSWORD,
+                category_id=category_id or None,
+                limit=limit,
+                refresh=refresh,
+            )
+            self._json(bundle)
 
         elif path == "/api/log":
             self._json({"entries": self.ctx.get_log()})

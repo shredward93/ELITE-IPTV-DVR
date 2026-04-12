@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="40dp"
+    android:viewportWidth="120"
+    android:viewportHeight="40">
+    
+    <!-- Background gradient -->
+    <path
+        android:fillColor="#F89344"
+        android:pathData="M0,0 L120,0 L120,40 L0,40 Z" />
+    
+    <!-- Triangle logo element -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M10,8 L22,28 L-2,28 Z" />
+    
+    <!-- ELITE text -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,12 L30,28 L34,28 L34,20 L38,20 L38,28 L42,28 L42,12 L38,12 L38,18 L34,18 L34,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,12 L46,28 L50,28 L50,21 L53,28 L58,28 L55,21 C58,20 60,18 60,15 C60,12 58,12 55,12 L46,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,16 L54,16 C55,16 55,17 55,17 C55,18 55,18 54,18 L50,18 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,12 L64,28 L68,28 L68,22 L72,28 L78,28 L73,21 C76,20 78,18 78,15 C78,12 76,12 73,12 L64,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,16 L72,16 C73,16 73,17 73,17 C73,18 73,18 72,18 L68,18 Z" />
+    
+    <!-- IPTV text -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M82,12 L82,28 L86,28 L86,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M90,12 L90,28 L94,28 L94,22 L98,28 L104,28 L99,21 C102,20 104,18 104,15 C104,12 102,12 99,12 L90,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M94,16 L98,16 C99,16 99,17 99,17 C99,18 99,18 98,18 L94,18 Z" />
+    
+    <!-- DVR text -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M108,12 L108,28 L112,28 L112,22 L116,28 L122,28 L117,21 C120,20 122,18 122,15 C122,12 120,12 117,12 L108,12 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M112,16 L116,16 C117,16 117,17 117,17 C117,18 117,18 116,18 L112,18 Z" />
+</vector>

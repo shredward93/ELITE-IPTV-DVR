@@ -15,6 +15,7 @@ import com.elite.iptv.dvr.api.DvrSegment
 import com.elite.iptv.dvr.api.DvrStartRequest
 import com.elite.iptv.dvr.api.EpgListing
 import com.elite.iptv.dvr.api.FavoriteRequest
+import com.elite.iptv.dvr.api.GuideBundle
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
 import kotlinx.coroutines.launch
@@ -41,7 +42,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var categoryChannels by mutableStateOf<List<Channel>>(emptyList())
         private set
 
+    var allChannels by mutableStateOf<List<Channel>>(emptyList())
+        private set
+
+    var guideBundleSource by mutableStateOf<String?>(null)
+        private set
+
+    var guideBundleLoading by mutableStateOf(false)
+        private set
+
+    var lastGuideCategoryId by mutableStateOf<String?>(null)
+        private set
+
+    var lastGuideRefreshAfterMs by mutableStateOf<Long>(0L)
+        private set
+
     var guideEpg by mutableStateOf<Map<String, List<EpgListing>>>(emptyMap())
+        private set
+
+    var lastGuideChannelIds by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    var lastGuideLimit by mutableStateOf(0)
+        private set
+
+    var guideEpgLoadedChannelIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    var guideEpgLoadingChannelIds by mutableStateOf<Set<String>>(emptySet())
         private set
 
     var completedRecordings by mutableStateOf<List<CompletedRecording>>(emptyList())
@@ -124,18 +152,82 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadChannelsByCategory(categoryId: String) {
         categoryChannels = emptyList()
-        guideEpg = emptyMap()
         viewModelScope.launch {
             runCatching { categoryChannels = ApiClient.service.getChannelsByCategory(categoryId) }
         }
     }
 
-    fun loadGuideEpg(channelIds: List<String>, limit: Int = 6) {
+    fun loadAllChannels() {
+        viewModelScope.launch {
+            runCatching { allChannels = ApiClient.service.getAllChannels() }
+        }
+    }
+
+    fun loadGuideBundle(categoryId: String? = null, limit: Int = 24, refresh: Boolean = false) {
+        val normalizedCategoryId = categoryId?.trim().orEmpty()
+        if (!refresh && lastGuideCategoryId == normalizedCategoryId && guideEpg.isNotEmpty() && lastGuideLimit >= limit) return
+
+        guideBundleLoading = true
         viewModelScope.launch {
             runCatching {
-                val result = ApiClient.service.getMultiEpg(channelIds.joinToString(","), limit)
-                guideEpg = result.associate { it.channelId to it.listings }
+                val bundle: GuideBundle = ApiClient.service.getGuide(
+                    categoryId = normalizedCategoryId.ifBlank { null },
+                    limit = limit,
+                    refresh = refresh,
+                )
+                categories = bundle.categories
+                categoryChannels = bundle.channels
+                guideBundleSource = bundle.source
+                lastGuideCategoryId = bundle.categoryId
+                lastGuideRefreshAfterMs = bundle.refreshAfterMs
+                lastGuideLimit = limit
+                lastGuideChannelIds = bundle.channels.map { it.id }
+                guideEpg = guideEpg + bundle.guideEpg
+                guideEpgLoadedChannelIds = guideEpgLoadedChannelIds + bundle.guideEpg.keys
+            }.onFailure { e ->
+                println("[ANDROID] Guide bundle request failed: ${e.message}")
             }
+            guideBundleLoading = false
+        }
+    }
+
+    fun loadGuideEpg(channelIds: List<String>, limit: Int = 6) {
+        val normalizedIds = channelIds.distinct().take(30)
+        if (normalizedIds.isEmpty()) return
+        if (guideEpg.isNotEmpty() && lastGuideChannelIds == normalizedIds && lastGuideLimit >= limit) return
+
+        println("[ANDROID] Requesting EPG for ${normalizedIds.size} channels: ${normalizedIds.take(5)}")
+        
+        lastGuideChannelIds = normalizedIds
+        lastGuideLimit = limit
+        guideEpgLoadingChannelIds = guideEpgLoadingChannelIds + normalizedIds
+        viewModelScope.launch {
+            runCatching {
+                val result = ApiClient.service.getMultiEpg(normalizedIds.joinToString(","), limit)
+                val totalListings = result.sumOf { it.listings.size }
+                println("[ANDROID] Received EPG: $totalListings listings for ${result.size} channels")
+                guideEpg = guideEpg + result.associate { it.channelId to it.listings }
+                guideEpgLoadedChannelIds = guideEpgLoadedChannelIds + normalizedIds
+            }.onFailure { e ->
+                println("[ANDROID] EPG request failed: ${e.message}")
+            }
+            guideEpgLoadingChannelIds = guideEpgLoadingChannelIds - normalizedIds.toSet()
+        }
+    }
+
+    fun ensureGuideEpg(channelId: String, limit: Int = 12) {
+        if (channelId.isBlank()) return
+        if (guideEpg[channelId].orEmpty().isNotEmpty()) return
+        if (channelId in guideEpgLoadingChannelIds) return
+
+        guideEpgLoadingChannelIds = guideEpgLoadingChannelIds + channelId
+        viewModelScope.launch {
+            runCatching {
+                val result = ApiClient.service.getEpg(channelId)
+                guideEpg = guideEpg + (channelId to result.listings.take(limit))
+                guideEpgLoadedChannelIds = guideEpgLoadedChannelIds + channelId
+            }
+            guideEpgLoadingChannelIds = guideEpgLoadingChannelIds - channelId
         }
     }
 

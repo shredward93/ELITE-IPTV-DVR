@@ -50,12 +50,9 @@ fun EliteNavHost(viewModel: MainViewModel) {
 
         composable(Screen.Channels.route) {
             ChannelBrowserScreen(
-                viewModel         = viewModel,
-                onChannelSelected = { id, name -> nav.navigate(Screen.Player.go(id, name)) },
-                onGuideOpen       = { id, name -> nav.navigate(Screen.Guide.go(id, name)) },
-                onGuideGridOpen   = { nav.navigate(Screen.GuideGrid.route) },
-                onLibraryOpen     = { nav.navigate(Screen.Library.route) },
-                onSettingsOpen    = { nav.navigate(Screen.Pair.route) },
+                onGuideGridOpen = { nav.navigate(Screen.GuideGrid.route) },
+                onLibraryOpen   = { nav.navigate(Screen.Library.route) },
+                onSettingsOpen  = { nav.navigate(Screen.Pair.route) },
             )
         }
 

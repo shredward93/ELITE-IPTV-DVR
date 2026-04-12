@@ -34,9 +34,9 @@ object ApiClient {
             .create(ApiService::class.java)
     }
 
-    /** Full URL for the live HLS playlist used by the current player path. */
-    fun dvrPlaylistUrl(baseUrl: String): String =
-        "${baseUrl.trimEnd('/')}/dvr/playlist.m3u8"
+    /** Full URL for the direct live MPEG-TS proxy used by the lighter live player path. */
+    fun liveStreamUrl(baseUrl: String, channelId: String): String =
+        "${baseUrl.trimEnd('/')}/api/stream/live?channel_id=$channelId"
 
     /** Full URL for a completed recording file. */
     fun recordingUrl(baseUrl: String, filename: String): String =

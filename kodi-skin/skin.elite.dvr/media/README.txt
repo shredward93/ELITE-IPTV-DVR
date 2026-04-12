@@ -31,7 +31,12 @@ Required PNG images to create:
 8. elite_logo_small.png - Smaller version for header
    - Size: 60x60
 
-9. icons/*.png - Menu icons (optional):
+9. bg_primary.png - Main Kodi background image for the skin
+   - Source: copy your `kodi bg.png` file here and rename it to `bg_primary.png`
+   - Used for: Home screen, dialogs, and all non-boot skin windows
+   - Note: the boot screen keeps using `elite_home_bg.png`
+
+10. icons/*.png - Menu icons (optional):
    - guide.png
    - livetv.png
    - recordings.png

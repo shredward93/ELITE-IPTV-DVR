@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fonts>
+    <fontset id="default" unicode="true">
+        <!-- ELITE IPTV DVR Typography -->
+        
+        <!-- Display/Title Fonts -->
+        <font>
+            <name>font28_title</name>
+            <filename>arial.ttf</filename>
+            <size>28</size>
+            <style>bold</style>
+        </font>
+        <font>
+            <name>font22_header</name>
+            <filename>arial.ttf</filename>
+            <size>22</size>
+            <style>bold</style>
+        </font>
+        
+        <!-- Body Fonts -->
+        <font>
+            <name>font16_body</name>
+            <filename>arial.ttf</filename>
+            <size>16</size>
+        </font>
+        <font>
+            <name>font14_label</name>
+            <filename>arial.ttf</filename>
+            <size>14</size>
+        </font>
+        <font>
+            <name>font12_caption</name>
+            <filename>arial.ttf</filename>
+            <size>12</size>
+        </font>
+        <font>
+            <name>font10_small</name>
+            <filename>arial.ttf</filename>
+            <size>10</size>
+        </font>
+        
+        <!-- Accent Fonts -->
+        <font>
+            <name>font14_accent</name>
+            <filename>arial.ttf</filename>
+            <size>14</size>
+            <style>bold</style>
+        </font>
+        <font>
+            <name>font12_accent</name>
+            <filename>arial.ttf</filename>
+            <size>12</size>
+            <style>bold</style>
+        </font>
+        
+        <!-- List/Menu Fonts -->
+        <font>
+            <name>font_list</name>
+            <filename>arial.ttf</filename>
+            <size>15</size>
+        </font>
+        <font>
+            <name>font_list_focus</name>
+            <filename>arial.ttf</filename>
+            <size>15</size>
+            <style>bold</style>
+        </font>
+    </fontset>
+</fonts>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+    <category label="Server Settings">
+        <setting id="server_ip" type="ipaddress" label="Server IP Address" default="192.168.1.100"/>
+        <setting id="server_port" type="number" label="Server Port" default="8080"/>
+    </category>
+    <category label="Playback">
+        <setting id="default_mode" type="select" label="Default Mode" values="Live (Fast)|DVR (Pause/Rewind)" default="Live (Fast)"/>
+        <setting id="buffer_seconds" type="number" label="DVR Buffer Wait (seconds)" default="2" min="1" max="10"/>
+    </category>
+</settings>

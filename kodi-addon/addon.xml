@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="plugin.video.eliteiptv" version="1.0.0" name="ELITE IPTV DVR" provider-name="ELITE">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="script.module.requests" version="2.22.0"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="main.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>ELITE IPTV DVR Client</summary>
+        <description>Live TV and DVR for ELITE IPTV. Features live pause, rewind, and channel browsing with your PC-based DVR server.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+    </extension>
+</addon>

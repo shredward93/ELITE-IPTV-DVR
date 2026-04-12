@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<includes>
+    <!-- ELITE IPTV DVR Common Includes -->
+    
+    <!-- Constants -->
+    <constant name="elite_padding">27</constant>
+    <constant name="elite_card_radius">18</constant>
+    <constant name="elite_button_radius">22</constant>
+    <constant name="elite_focus_border">3</constant>
+    
+    <!-- Background Include -->
+    <include name="elite_background">
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture>bg_primary.png</texture>
+            <colordiffuse>bg_primary</colordiffuse>
+        </control>
+    </include>
+    
+    <!-- Logo Header Include -->
+    <include name="elite_header">
+        <control type="group">
+            <left>27</left>
+            <top>27</top>
+            <width>1866</width>
+            <height>80</height>
+            
+            <!-- Logo Circle -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>60</width>
+                <height>60</height>
+                <texture>elite_accent</texture>
+                <bordertexture border="30">circle.png</bordertexture>
+            </control>
+            
+            <!-- Logo Icon -->
+            <control type="image">
+                <left>15</left>
+                <top>15</top>
+                <width>30</width>
+                <height>30</height>
+                <texture>elite_logo_small.png</texture>
+            </control>
+            
+            <!-- Title -->
+            <control type="label">
+                <left>75</left>
+                <top>0</top>
+                <width>400</width>
+                <height>35</height>
+                <label>ELITE IPTV DVR</label>
+                <font>font22_header</font>
+                <textcolor>text_primary</textcolor>
+            </control>
+            
+            <!-- Subtitle -->
+            <control type="label">
+                <left>75</left>
+                <top>35</top>
+                <width>400</width>
+                <height>25</height>
+                <label>Premium Streaming Experience</label>
+                <font>font12_caption</font>
+                <textcolor>text_tertiary</textcolor>
+            </control>
+        </control>
+    </include>
+    
+    <!-- Panel Background (rounded) -->
+    <include name="elite_panel">
+        <param name="left" default="0"/>
+        <param name="top" default="0"/>
+        <param name="width" default="400"/>
+        <param name="height" default="600"/>
+        <definition>
+            <control type="image">
+                <left>$PARAM[left]</left>
+                <top>$PARAM[top]</top>
+                <width>$PARAM[width]</width>
+                <height>$PARAM[height]</height>
+                <texture colordiffuse="bg_panel" border="18">panel_rounded.png</texture>
+            </control>
+        </definition>
+    </include>
+    
+    <!-- Button Style (Gold Accent) -->
+    <include name="elite_button">
+        <param name="id"/>
+        <param name="left"/>
+        <param name="top"/>
+        <param name="width" default="120"/>
+        <param name="height" default="44"/>
+        <param name="label"/>
+        <param name="onclick"/>
+        <definition>
+            <control type="button" id="$PARAM[id]">
+                <left>$PARAM[left]</left>
+                <top>$PARAM[top]</top>
+                <width>$PARAM[width]</width>
+                <height>$PARAM[height]</height>
+                <label>$PARAM[label]</label>
+                <font>font14_label</font>
+                <textcolor>text_primary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <disabledcolor>text_disabled</disabledcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">button_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">button_rounded.png</texturenofocus>
+                <onclick>$PARAM[onclick]</onclick>
+            </control>
+        </definition>
+    </include>
+    
+    <!-- List Item Style -->
+    <include name="elite_listitem">
+        <param name="id"/>
+        <param name="left"/>
+        <param name="top"/>
+        <param name="width" default="350"/>
+        <param name="height" default="54"/>
+        <definition>
+            <control type="button" id="$PARAM[id]">
+                <left>$PARAM[left]</left>
+                <top>$PARAM[top]</top>
+                <width>$PARAM[width]</width>
+                <height>$PARAM[height]</height>
+                <font>font_list</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <selectedcolor>text_primary</selectedcolor>
+                <texturefocus colordiffuse="bg_card_hover" border="6">card_rounded.png</texturefocus>
+                <texturenofocus>-</texturenofocus>
+                <alttexturefocus colordiffuse="elite_accent" border="22">card_rounded.png</alttexturefocus>
+                <alttexturenofocus colordiffuse="bg_card" border="22">card_rounded.png</alttexturenofocus>
+            </control>
+        </definition>
+    </include>
+    
+    <!-- Category Chip (pill style) -->
+    <include name="elite_category_chip">
+        <param name="id"/>
+        <param name="left"/>
+        <param name="top"/>
+        <param name="width" default="180"/>
+        <param name="label"/>
+        <definition>
+            <control type="button" id="$PARAM[id]">
+                <left>$PARAM[left]</left>
+                <top>$PARAM[top]</top>
+                <width>$PARAM[width]</width>
+                <height>44</height>
+                <label>$PARAM[label]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <selectedcolor>text_primary</selectedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+            </control>
+        </definition>
+    </include>
+    
+    <!-- Time Display -->
+    <include name="elite_time_display">
+        <control type="group">
+            <right>27</right>
+            <top>27</top>
+            <width>200</width>
+            <height>60</height>
+            
+            <control type="label">
+                <right>0</right>
+                <top>0</top>
+                <width>200</width>
+                <height>30</height>
+                <label>$INFO[System.Time]</label>
+                <align>right</align>
+                <font>font16_body</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+            
+            <control type="label">
+                <right>0</right>
+                <top>30</top>
+                <width>200</width>
+                <height>25</height>
+                <label>$INFO[System.Date]</label>
+                <align>right</align>
+                <font>font12_caption</font>
+                <textcolor>text_tertiary</textcolor>
+            </control>
+        </control>
+    </include>
+</includes>

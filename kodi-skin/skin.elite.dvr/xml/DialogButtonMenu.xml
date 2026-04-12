@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="11111">
+    <defaultcontrol always="true">9000</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        
+        <!-- Dark Overlay -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="bg_overlay">white.png</texture>
+        </control>
+        
+        <!-- Menu Panel -->
+        <control type="group">
+            <right>27</right>
+            <centertop>50%</centertop>
+            <width>400</width>
+            <height>600</height>
+            
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>400</width>
+                <height>600</height>
+                <texture colordiffuse="bg_panel" border="18">panel_rounded.png</texture>
+            </control>
+            
+            <!-- Title -->
+            <control type="label">
+                <left>20</left>
+                <top>20</top>
+                <width>360</width>
+                <height>30</height>
+                <label>Menu</label>
+                <font>font22_header</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+            
+            <!-- Button List -->
+            <control type="grouplist" id="9000">
+                <left>20</left>
+                <top>70</top>
+                <width>360</width>
+                <height>500</height>
+                <itemgap>10</itemgap>
+                <orientation>vertical</orientation>
+                <onleft>9000</onleft>
+                <onright>9000</onright>
+                <onup>9000</onup>
+                <ondown>9000</ondown>
+            </control>
+            
+            <!-- Menu Buttons -->
+            <control type="button" id="1">
+                <description>Exit Kodi</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[13012]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>Quit()</onclick>
+            </control>
+            
+            <control type="button" id="2">
+                <description>Power Off</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[13005]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>Powerdown()</onclick>
+            </control>
+            
+            <control type="button" id="3">
+                <description>Custom Shutdown Timer</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[20150]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>ActivateWindow(shutdownmenu)</onclick>
+            </control>
+            
+            <control type="button" id="4">
+                <description>Suspend</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[13011]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>Suspend()</onclick>
+            </control>
+            
+            <control type="button" id="5">
+                <description>Hibernate</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[13010]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>Hibernate()</onclick>
+            </control>
+            
+            <control type="button" id="6">
+                <description>Reboot</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[13013]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturefocus>
+                <onclick>Reset()</onclick>
+            </control>
+            
+            <control type="button" id="7">
+                <description>System Info</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[138]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturenofocus>
+                <onclick>ActivateWindow(systeminfo)</onclick>
+            </control>
+            
+            <control type="button" id="8">
+                <description>Event Log</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[14111]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturefocus>
+                <onclick>ActivateWindow(eventlog)</onclick>
+            </control>
+            
+            <control type="button" id="9">
+                <description>Settings</description>
+                <width>360</width>
+                <height>50</height>
+                <label>$LOCALIZE[5]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturefocus>
+                <onclick>ActivateWindow(settings)</onclick>
+            </control>
+            
+            <control type="button" id="10">
+                <description>Back</description>
+                <width>360</width>
+                <height>50</height>
+                <label>← Back</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="bg_card_hover" border="22">pill_rounded.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturefocus>
+                <onclick>Dialog.Close(11111)</onclick>
+            </control>
+            
+        </control>
+    </controls>
+</window>

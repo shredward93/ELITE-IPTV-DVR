@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="home" id="10000">
+    <defaultcontrol always="true">9000</defaultcontrol>
+    <allowoverlay>no</allowoverlay>
+    <controls>
+        
+        <!-- Background -->
+        <include>elite_background</include>
+        
+        <!-- Header with Logo -->
+        <include>elite_header</include>
+        
+        <!-- Time Display -->
+        <include>elite_time_display</include>
+        
+        <!-- Main Menu -->
+        <control type="fixedlist" id="9000">
+            <left>27</left>
+            <top>150</top>
+            <width>300</width>
+            <height>800</height>
+            <onleft>9000</onleft>
+            <onright>50</onright>
+            <onup>9000</onup>
+            <ondown>9000</ondown>
+            <focusposition>0</focusposition>
+            <movement>3</movement>
+            <preloaditems>2</preloaditems>
+            
+            <!-- TV Guide -->
+            <item>
+                <label>TV Guide</label>
+                <onclick>ActivateWindow(TVGuide)</onclick>
+                <thumb>icons/guide.png</thumb>
+            </item>
+            
+            <!-- Live TV -->
+            <item>
+                <label>Live TV</label>
+                <onclick>ActivateWindow(TVChannels)</onclick>
+                <thumb>icons/livetv.png</thumb>
+            </item>
+            
+            <!-- Recordings (DVR) -->
+            <item>
+                <label>DVR Library</label>
+                <onclick>ActivateWindow(TVRecordings)</onclick>
+                <thumb>icons/recordings.png</thumb>
+            </item>
+            
+            <!-- Timers -->
+            <item>
+                <label>Timers</label>
+                <onclick>ActivateWindow(TVTimers)</onclick>
+                <thumb>icons/timers.png</thumb>
+            </item>
+            
+            <!-- Search -->
+            <item>
+                <label>Search</label>
+                <onclick>ActivateWindow(TVSearch)</onclick>
+                <thumb>icons/search.png</thumb>
+            </item>
+            
+            <!-- Settings -->
+            <item>
+                <label>Settings</label>
+                <onclick>ActivateWindow(Settings)</onclick>
+                <thumb>icons/settings.png</thumb>
+            </item>
+            
+            <!-- Item Layout -->
+            <itemlayout width="300" height="70">
+                <control type="image">
+                    <left>0</left>
+                    <top>10</top>
+                    <width>280</width>
+                    <height>54</height>
+                    <texture colordiffuse="bg_card" border="6">card_rounded.png</texture>
+                </control>
+                <control type="label">
+                    <left>20</left>
+                    <top>10</top>
+                    <width>240</width>
+                    <height>54</height>
+                    <label>$INFO[ListItem.Label]</label>
+                    <font>font14_label</font>
+                    <textcolor>text_secondary</textcolor>
+                </control>
+            </itemlayout>
+            
+            <!-- Focused Layout (Gold Accent) -->
+            <focusedlayout width="300" height="70">
+                <control type="image">
+                    <left>0</left>
+                    <top>10</top>
+                    <width>280</width>
+                    <height>54</height>
+                    <texture colordiffuse="elite_accent" border="22">pill_rounded.png</texture>
+                </control>
+                <control type="label">
+                    <left>20</left>
+                    <top>10</top>
+                    <width>240</width>
+                    <height>54</height>
+                    <label>$INFO[ListItem.Label]</label>
+                    <font>font14_accent</font>
+                    <textcolor>text_primary</textcolor>
+                </control>
+            </focusedlayout>
+        </control>
+        
+        <!-- Featured/Recent Content Panel -->
+        <control type="group">
+            <left>350</left>
+            <top>150</top>
+            <width>1540</width>
+            <height>800</height>
+            
+            <!-- Panel Background -->
+            <include content="elite_panel">
+                <param name="left">0</param>
+                <param name="top">0</param>
+                <param name="width">1540</param>
+                <param name="height">800</param>
+            </include>
+            
+            <!-- Panel Title -->
+            <control type="label">
+                <left>27</left>
+                <top>20</top>
+                <width>400</width>
+                <height>30</height>
+                <label>Continue Watching</label>
+                <font>font16_body</font>
+                <textcolor>text_secondary</textcolor>
+            </control>
+            
+            <!-- Content Grid (Widgets) -->
+            <control type="panel" id="50">
+                <left>27</left>
+                <top>70</top>
+                <width>1486</width>
+                <height>700</height>
+                <onleft>9000</onleft>
+                <onright condition="Container(50).HasNext">50</onright>
+                <onup>9000</onup>
+                <ondown>9000</ondown>
+                
+                <itemlayout width="300" height="200">
+                    <control type="image">
+                        <left>0</left>
+                        <top>0</top>
+                        <width>280</width>
+                        <height>160</height>
+                        <texture colordiffuse="bg_card" border="6">card_rounded.png</texture>
+                    </control>
+                    <control type="label">
+                        <left>10</left>
+                        <top>165</top>
+                        <width>260</width>
+                        <height>30</height>
+                        <label>$INFO[ListItem.Label]</label>
+                        <font>font12_caption</font>
+                        <textcolor>text_secondary</textcolor>
+                    </control>
+                </itemlayout>
+                
+                <focusedlayout width="300" height="200">
+                    <control type="image">
+                        <left>0</left>
+                        <top>0</top>
+                        <width>280</width>
+                        <height>160</height>
+                        <texture colordiffuse="elite_accent" border="6">card_rounded.png</texture>
+                    </control>
+                    <control type="label">
+                        <left>10</left>
+                        <top>165</top>
+                        <width>260</width>
+                        <height>30</height>
+                        <label>$INFO[ListItem.Label]</label>
+                        <font>font12_accent</font>
+                        <textcolor>text_primary</textcolor>
+                    </control>
+                </focusedlayout>
+                
+                <content target="tvshows">plugin://plugin.video.elitedvr/?action=recent</content>
+            </control>
+        </control>
+        
+        <!-- Version/Status Footer -->
+        <control type="label">
+            <left>27</left>
+            <bottom>20</bottom>
+            <width>400</width>
+            <height>20</height>
+            <label>ELITE IPTV DVR v1.0</label>
+            <font>font10_small</font>
+            <textcolor>text_muted</textcolor>
+        </control>
+        
+    </controls>
+</window>

@@ -268,6 +268,14 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 return
             self._serve_file_range(os.path.join(config.DVR_BUFFER_DIR, seg_name))
 
+        # ── Kodi: M3U playlist with proxy URLs ────────────────────────────────
+        elif path == "/kodi/playlist.m3u":
+            self._serve_kodi_playlist(qs)
+
+        # ── Kodi: XMLTV EPG guide ─────────────────────────────────────────────
+        elif path == "/kodi/guide.xml":
+            self._serve_kodi_xmltv()
+
         # ── Completed recordings list ─────────────────────────────────────────
         elif path == "/recordings":
             self._json(self._list_recordings())
@@ -511,6 +519,123 @@ class RemoteHandler(BaseHTTPRequestHandler):
                     "status_text":  _labels.get(job.status, job.status),
                 })
         return {"active": active, "recent": recent}
+
+    def _serve_kodi_playlist(self, qs: dict):
+        """Generate M3U playlist with proxy URLs for Kodi."""
+        ip = self._local_ip()
+        port = config.WEB_PORT
+
+        # Get channels - try get_all_channels first, fall back to direct API fetch
+        channels = []
+        if self.ctx.get_all_channels:
+            try:
+                channels = self.ctx.get_all_channels()
+            except Exception:
+                pass
+
+        # If no channels from context, fetch directly from provider API
+        if not channels:
+            try:
+                url = (
+                    f"{config.SERVER_URL}/player_api.php"
+                    f"?username={config.USERNAME}&password={config.PASSWORD}"
+                    f"&action=get_live_streams"
+                )
+                streams = requests.get(url, timeout=15).json()
+                channels = [
+                    {
+                        "id": str(s["stream_id"]),
+                        "name": s.get("name", ""),
+                        "stream_icon": s.get("stream_icon", ""),
+                        "epg_channel_id": s.get("epg_channel_id", ""),
+                    }
+                    for s in streams if s.get("stream_id")
+                ]
+            except Exception as exc:
+                print(f"[Kodi] Failed to fetch channels: {exc}")
+                self._error(503, "Failed to fetch channel list")
+                return
+
+        # Check for DVR mode query param
+        dvr_mode = qs.get("dvr", [""])[0].lower() in {"1", "true", "yes"}
+
+        # Build M3U content
+        lines = ["#EXTM3U"]
+        for ch in channels:
+            ch_id = ch.get("id", "")
+            name = ch.get("name", ch_id)
+            icon = ch.get("stream_icon", "")
+            tvg_id = ch.get("epg_channel_id", ch_id)
+
+            # tvg-name and group-title for Kodi PVR
+            lines.append(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{name}" group-title="Live TV"{f" tvg-logo=\"{icon}\"" if icon else ""},{name}')
+
+            if dvr_mode:
+                # DVR HLS playlist URL
+                lines.append(f"http://{ip}:{port}/dvr/playlist.m3u8")
+            else:
+                # Direct proxy URL
+                lines.append(f"http://{ip}:{port}/api/stream/live?channel_id={ch_id}")
+
+        m3u_content = "\n".join(lines)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+        self.send_header("Content-Length", str(len(m3u_content)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(m3u_content.encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _serve_kodi_xmltv(self):
+        """Serve cached XMLTV file for Kodi EPG."""
+        # Try to return the cached XMLTV file directly
+        cache_path = config.XMLTV_CACHE_PATH
+
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "rb") as f:
+                    data = f.read()
+                # Decompress if gzipped
+                if data[:2] == b"\x1f\x8b":
+                    import gzip
+                    data = gzip.decompress(data)
+            except Exception as exc:
+                print(f"[Kodi] Failed to read cached XMLTV: {exc}")
+                self._error(503, "Failed to read EPG data")
+                return
+        else:
+            # No cache - fetch fresh
+            try:
+                url = (
+                    f"{config.SERVER_URL}/xmltv.php"
+                    f"?username={config.USERNAME}&password={config.PASSWORD}"
+                )
+                if config.XMLTV_SOURCE_URL:
+                    url = config.XMLTV_SOURCE_URL
+                r = requests.get(url, timeout=60)
+                data = r.content
+                if data[:2] == b"\x1f\x8b":
+                    import gzip
+                    data = gzip.decompress(data)
+            except Exception as exc:
+                print(f"[Kodi] Failed to fetch XMLTV: {exc}")
+                self._error(503, "Failed to fetch EPG data")
+                return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/xml")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     @staticmethod
     def _local_ip() -> str:

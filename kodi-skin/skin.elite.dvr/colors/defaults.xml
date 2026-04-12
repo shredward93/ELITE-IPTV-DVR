@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<colors>
+    <!-- ELITE IPTV DVR Brand Colors -->
+    
+    <!-- Primary Accent (Gold/Orange) -->
+    <color name="elite_accent">FFF89344</color>
+    <color name="elite_accent_light">FFFFD24C</color>
+    <color name="elite_accent_dark">FFE07A2A</color>
+    
+    <!-- Background Palette -->
+    <color name="bg_primary">FF000000</color>
+    <color name="bg_panel">FF0F0F0F</color>
+    <color name="bg_panel_light">FF101010</color>
+    <color name="bg_card">FF1A1A1A</color>
+    <color name="bg_card_hover">FF262626</color>
+    <color name="bg_header">FF181818</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">FFFFFFFF</color>
+    <color name="text_secondary">FFE0E0E0</color>
+    <color name="text_tertiary">FFBDBDBD</color>
+    <color name="text_muted">FF9A9A9A</color>
+    <color name="text_disabled">FF666666</color>
+    
+    <!-- Focus & Selection -->
+    <color name="focus_border">FFFFD24C</color>
+    <color name="selected_bg">FFF89344</color>
+    <color name="selected_text">FFFFFFFF</color>
+    
+    <!-- Status Colors -->
+    <color name="error">FFFF8A80</color>
+    <color name="success">FF4CAF50</color>
+    <color name="info">FF2196F3</color>
+    
+    <!-- Standard Kodi mappings -->
+    <color name="background">FF000000</color>
+    <color name="bg_overlay">E6000000</color>
+    <color name="shadow">80000000</color>
+    
+    <!-- Kodi compatibility -->
+    <color name="white">FFFFFFFF</color>
+    <color name="black">FF000000</color>
+    <color name="grey">FF9A9A9A</color>
+    <color name="grey2">FF666666</color>
+    <color name="grey3">FF333333</color>
+    <color name="button_focus">FFF89344</color>
+    <color name="button_disabled">FF2E2E2E</color>
+</colors>

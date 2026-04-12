@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="skin.elite.dvr" version="1.0.0" name="ELITE IPTV DVR" provider-name="ELITE">
+    <requires>
+        <import addon="xbmc.gui" version="5.15.0"/>
+    </requires>
+    <extension point="xbmc.gui.skin" debugging="false">
+        <res width="1920" height="1080" aspect="16:9" default="true" folder="xml" />
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en">ELITE IPTV DVR Skin</summary>
+        <description lang="en">A premium dark skin with signature gold accents matching the ELITE IPTV DVR Android TV experience.</description>
+        <platform>all</platform>
+        <license>GPL-2.0-or-later</license>
+        <assets>
+            <icon>icon.png</icon>
+            <fanart>fanart.jpg</fanart>
+            <screenshot>screenshot01.jpg</screenshot>
+        </assets>
+    </extension>
+</addon>

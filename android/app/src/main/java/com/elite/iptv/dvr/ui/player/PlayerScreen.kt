@@ -4,8 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,18 +21,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
+import android.net.Uri
+import android.util.Log
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.viewmodel.MainViewModel
+import androidx.compose.ui.platform.LocalContext
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.util.VLCVideoLayout
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -41,30 +51,41 @@ fun PlayerScreen(
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var playerView by remember { mutableStateOf<PlayerView?>(null) }
 
-    val player = remember {
-        ExoPlayer.Builder(context)
-            .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
-            .setLoadControl(
-                DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(
-                        /* minBufferMs             */ 30_000,
-                        /* maxBufferMs             */ 60_000,
-                        /* bufferForPlaybackMs     */ 4_000,
-                        /* bufferForPlaybackAfterRebufferMs */ 8_000,
-                    )
-                    .setPrioritizeTimeOverSizeThresholds(true)
-                    .build()
-            )
-            .build()
-            .apply { playWhenReady = true }
+    val libVlc = remember {
+        LibVLC(
+            context,
+            arrayListOf(
+                "--network-caching=3000",
+                "--live-caching=3000",
+                "--clock-jitter=0",
+                "--clock-synchro=0",
+            ),
+        )
     }
 
-    DisposableEffect(Unit) {
+    val mediaPlayer = remember { MediaPlayer(libVlc) }
+    val cleanupScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+
+    DisposableEffect(mediaPlayer) {
+        val listener = object : MediaPlayer.EventListener {
+            override fun onEvent(event: MediaPlayer.Event) {
+                Log.d("ElitePlayer", "libVLC event=$event")
+            }
+        }
+
+        mediaPlayer.setEventListener(listener)
         onDispose {
-            player.release()
             viewModel.stopDvrAsync()
+            cleanupScope.launch {
+                runCatching { mediaPlayer.setEventListener(null) }
+                runCatching { mediaPlayer.stop() }
+                runCatching { mediaPlayer.detachViews() }
+                runCatching { mediaPlayer.media = null }
+                runCatching { mediaPlayer.release() }
+                runCatching { libVlc.release() }
+                runCatching { cleanupScope.cancel() }
+            }
         }
     }
 
@@ -95,42 +116,28 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        // Single HLS manifest URL. media3-exoplayer-hls auto-detects .m3u8 and
-        // builds an HlsMediaSource; LiveConfiguration tells it to aim for the
-        // live edge with a 6 s target offset and mild speed-ramp to catch up.
-        val mediaItem = MediaItem.Builder()
-            .setUri(ApiClient.dvrPlaylistUrl(viewModel.pcUrl))
-            .setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    // Stay 20 s behind live edge — segments are always ready,
-                    // no chance of hitting the edge and stalling.
-                    .setTargetOffsetMs(20_000)
-                    .setMinOffsetMs(10_000)
-                    .setMaxOffsetMs(40_000)
-                    // No speed ramp — constant 1× playback, no audio pitch shifts.
-                    .setMinPlaybackSpeed(1.0f)
-                    .setMaxPlaybackSpeed(1.0f)
-                    .build()
-            )
-            .build()
-
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        isLoading = false
-    }
-
-    // Keep nudging focus back to PlayerView so D-pad events (OK / arrows) always
-    // reach the controller. `update` callback alone isn't enough — focus can be
-    // stolen on surface updates and never recovered.
-    LaunchedEffect(isLoading, error) {
-        if (!isLoading && error == null) {
-            while (true) {
-                playerView?.let {
-                    if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
-                }
-                delay(750)
-            }
+        val playlistUrl = ApiClient.dvrPlaylistUrl(viewModel.pcUrl)
+        val media = Media(libVlc, Uri.parse(playlistUrl)).apply {
+            addOption(":network-caching=3000")
+            addOption(":live-caching=3000")
+            addOption(":clock-jitter=0")
+            addOption(":clock-synchro=0")
         }
+
+        try {
+            runCatching { mediaPlayer.stop() }
+            mediaPlayer.media = media
+            mediaPlayer.play()
+            Log.d("ElitePlayer", "libVLC play requested url=$playlistUrl")
+        } catch (e: Exception) {
+            error = "Failed to start VLC playback: ${e.message}"
+            isLoading = false
+            return@LaunchedEffect
+        } finally {
+            media.release()
+        }
+
+        isLoading = false
     }
 
     BackHandler { onBack() }
@@ -141,23 +148,19 @@ fun PlayerScreen(
             .background(Color.Black),
     ) {
         AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = true
-                    setShowNextButton(false)
-                    setShowPreviousButton(false)
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                    keepScreenOn = true
-                    controllerAutoShow = false
-                    controllerHideOnTouch = true
-                    setControllerShowTimeoutMs(4_000)
-                    isFocusable = true
-                    isFocusableInTouchMode = true
-                }.also { playerView = it }
-            },
+            factory = { ctx -> VLCVideoLayout(ctx).also { runCatching { mediaPlayer.attachViews(it, null, false, false) } } },
             modifier = Modifier.fillMaxSize(),
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Button(onClick = onBack) {
+                Text("Back")
+            }
+        }
 
         if (isLoading) {
             Column(

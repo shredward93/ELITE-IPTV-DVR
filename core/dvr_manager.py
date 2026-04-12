@@ -91,6 +91,7 @@ class DVRManager:
                 "-c:v",                  "libx264",
                 "-preset",               "veryfast",
                 "-crf",                  "23",
+                "-r",                    "60",
                 # Repeat SPS/PPS in the encoded bitstream so each HLS segment is
                 # independently decodable even when ExoPlayer joins mid-stream.
                 "-x264-params",          "repeat-headers=1",

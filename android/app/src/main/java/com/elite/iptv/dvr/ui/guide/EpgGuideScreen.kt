@@ -73,6 +73,13 @@ private const val WINDOW_MINS = 180 // 3-hour window
 private const val PRE_MINS = 30     // show 30 min before now
 private val CHANNEL_COL_WIDTH = 200.dp
 
+private data class VisibleListing(
+    val listing: EpgListing,
+    val startMs: Long,
+    val stopMs: Long,
+    val timeLabel: String,
+)
+
 @Composable
 fun EpgGuideScreen(
     viewModel: MainViewModel,
@@ -86,32 +93,31 @@ fun EpgGuideScreen(
 
     val nowMs = System.currentTimeMillis()
     val windowStartMs = nowMs - PRE_MINS * 60_000L
+    val guideTimeLabel = remember(nowMs) { formatGuideDateTime(nowMs) }
 
+    // Tivimate-style: prefetch ALL guide data in background on first open
     LaunchedEffect(Unit) {
-        if (viewModel.categoryChannels.isEmpty()) {
-            viewModel.loadGuideBundle()
+        if (viewModel.allCategories.isEmpty()) {
+            viewModel.prefetchAllGuideData()
         }
     }
 
-    LaunchedEffect(viewModel.categories) {
-        if (selectedCategory == null) {
-            selectedCategory = viewModel.categories.firstOrNull()
+    // Select first category once categories are loaded
+    LaunchedEffect(viewModel.allCategories) {
+        if (selectedCategory == null && viewModel.allCategories.isNotEmpty()) {
+            selectedCategory = viewModel.allCategories.first()
         }
     }
 
-    LaunchedEffect(selectedCategory) {
+    // Instant category switch - just reveals pre-loaded data, no network call
+    // If the selected category is not in the preloaded map yet, fall back to a single category load.
+    LaunchedEffect(selectedCategory, viewModel.channelsByCategory) {
         val cat = selectedCategory ?: return@LaunchedEffect
-        val alreadyLoaded = viewModel.lastGuideCategoryId == cat.categoryId && viewModel.categoryChannels.isNotEmpty()
-        if (!alreadyLoaded) {
-            viewModel.loadGuideBundle(cat.categoryId)
-        }
-    }
-
-    // If the backend is still downloading XMLTV, retry every 8 s until EPG arrives
-    LaunchedEffect(viewModel.guideBundleSource) {
-        if (viewModel.guideBundleSource == "loading") {
-            kotlinx.coroutines.delay(8_000L)
-            viewModel.loadGuideBundle(selectedCategory?.categoryId, refresh = true)
+        val cachedChannels = viewModel.channelsByCategory[cat.categoryId]
+        if (cachedChannels.isNullOrEmpty()) {
+            viewModel.loadGuideBundle(categoryId = cat.categoryId, limit = 24, refresh = false)
+        } else {
+            viewModel.switchGuideCategory(cat.categoryId)
         }
     }
 
@@ -174,7 +180,7 @@ fun EpgGuideScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = formatGuideDateTime(nowMs),
+                        text = guideTimeLabel,
                         color = Color(0xFFF89344),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -210,20 +216,50 @@ fun EpgGuideScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(12.dp))
-                        if (viewModel.categories.isEmpty()) {
+                        if (viewModel.allCategories.isEmpty() || viewModel.guidePrefetching) {
+                            // Show prefetch progress
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Color(0xFFF89344))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(color = Color(0xFFF89344))
+                                    Spacer(Modifier.height(8.dp))
+                                    val (loaded, total) = viewModel.guidePrefetchProgress
+                                    if (total > 0) {
+                                        Text(
+                                            text = "Loading $loaded/$total...",
+                                            color = Color(0xFFAAAAAA),
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                }
                             }
                         } else {
+                            // Only restore focus to selected category once
+                            val selectedFocusRequester = remember { FocusRequester() }
+                            LaunchedEffect(selectedCategory) {
+                                if (selectedCategory != null) {
+                                    runCatching { selectedFocusRequester.requestFocus() }
+                                }
+                            }
+
                             LazyColumn(
                                 contentPadding = PaddingValues(bottom = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                items(viewModel.categories, key = { it.categoryId }) { cat ->
+                                items(
+                                    items = viewModel.allCategories,
+                                    key = { it.categoryId },
+                                    contentType = { "category" }
+                                ) { cat ->
+                                    val isSelected = cat.categoryId == selectedCategory?.categoryId
                                     CategoryChip(
                                         category = cat,
-                                        selected = cat.categoryId == selectedCategory?.categoryId,
-                                        onClick = { selectedCategory = cat },
+                                        selected = isSelected,
+                                        onClick = {
+                                            if (selectedCategory?.categoryId != cat.categoryId) {
+                                                selectedCategory = cat
+                                            }
+                                        },
+                                        focusRequester = if (isSelected) selectedFocusRequester else null,
                                     )
                                 }
                             }
@@ -279,24 +315,21 @@ fun EpgGuideScreen(
 // ── Category sidebar item ─────────────────────────────────────────────────────
 
 @Composable
-private fun CategoryChip(category: Category, selected: Boolean, onClick: () -> Unit) {
-    val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(selected) {
-        if (selected) {
-            runCatching { focusRequester.requestFocus() }
-        }
-    }
-
+private fun CategoryChip(
+    category: Category,
+    selected: Boolean,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null,
+) {
     Surface(
         onClick = onClick,
         modifier = Modifier
-            .focusRequester(focusRequester)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { if (it.isFocused) onClick() }
             .height(40.dp),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor        = if (selected) Color(0xFFF89344) else Color(0xFF1A1A1A),
+            containerColor = if (selected) Color(0xFFF89344) else Color(0xFF1A1A1A),
             focusedContainerColor = if (selected) Color(0xFFF0A44C) else Color(0xFF2A2A2A),
         ),
     ) {
@@ -311,8 +344,8 @@ private fun CategoryChip(category: Category, selected: Boolean, onClick: () -> U
                 Spacer(Modifier.width(6.dp))
             }
             Text(
-                text     = category.categoryName,
-                color    = if (selected) Color.White else Color(0xFFE6E6E6),
+                text = category.categoryName,
+                color = if (selected) Color.White else Color(0xFFE6E6E6),
                 fontSize = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -360,62 +393,50 @@ private fun GuideChannelRow(
     val focusManager = LocalFocusManager.current
 
     val listings = viewModel.guideEpg[channel.id].orEmpty()
-    val isLoadingGuide = channel.id in viewModel.guideEpgLoadingChannelIds
-    val hasLoadedGuide = channel.id in viewModel.guideEpgLoadedChannelIds || listings.isNotEmpty()
-
-    val visible = remember(listings, windowStartMs) {
-        val filtered = listings.filter { l ->
-            val stop  = parseEpgMs(l.stop)
-            val start = parseEpgMs(l.start)
-            // Include programs with valid times that overlap our window, or invalid times for debugging
-            val isValid = start > 0 && stop > 0
-            val inWindow = isValid && (stop > windowStartMs && start < windowEndMs)
-            inWindow || !isValid // Show invalid entries for debugging
-        }
-        println("[GUIDE] Channel ${channel.id}: ${listings.size} total listings, ${filtered.size} visible")
-        filtered
-    }
-
-    val rowListState = rememberLazyListState()
-
-    LaunchedEffect(visible) {
-        val selectedIndex = visible.indexOfFirst {
-            val startMs = parseEpgMs(it.start)
-            val stopMs = parseEpgMs(it.stop)
-            startMs <= nowMs && stopMs > nowMs
-        }
-
-        if (selectedIndex >= 0) {
-            rowListState.animateScrollToItem(selectedIndex)
+    val visible = remember(channel.id, windowStartMs, listings) {
+        listings.mapNotNull { listing ->
+            val startMs = parseEpgMs(listing.start)
+            val stopMs = parseEpgMs(listing.stop)
+            val isValid = startMs > 0 && stopMs > 0
+            if (isValid && (stopMs > windowStartMs && startMs < windowEndMs)) {
+                VisibleListing(
+                    listing = listing,
+                    startMs = startMs,
+                    stopMs = stopMs,
+                    timeLabel = "${formatEpgTime(listing.start)}–${formatEpgTime(listing.stop)}",
+                )
+            } else {
+                null
+            }
         }
     }
+
+    val hasGuide = viewModel.guideEpg.containsKey(channel.id)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp),
+            .height(54.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Channel name cell - handles vertical navigation
         Surface(
             onClick = { onChannelPlay(channel.id, channel.name) },
             modifier = Modifier
                 .width(CHANNEL_COL_WIDTH)
-                .height(46.dp)
+                .height(48.dp)
                 .onPreviewKeyEvent { event ->
                     if (event.nativeKeyEvent.action == AndroidKeyEvent.ACTION_DOWN) {
                         when (event.nativeKeyEvent.keyCode) {
-                            AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> focusManager.moveFocus(FocusDirection.Right)
                             AndroidKeyEvent.KEYCODE_DPAD_UP -> focusManager.moveFocus(FocusDirection.Up)
                             AndroidKeyEvent.KEYCODE_DPAD_DOWN -> focusManager.moveFocus(FocusDirection.Down)
                             else -> false
                         }
-                    } else {
-                        false
-                    }
+                    } else false
                 },
-            shape  = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
             colors = ClickableSurfaceDefaults.colors(
-                containerColor        = Color(0xFF1A1A1A),
+                containerColor = Color(0xFF1A1A1A),
                 focusedContainerColor = Color(0xFFF89344),
             ),
         ) {
@@ -426,8 +447,8 @@ private fun GuideChannelRow(
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    text     = channel.name,
-                    color    = Color.White,
+                    text = channel.name,
+                    color = Color.White,
                     fontSize = 14.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -435,40 +456,44 @@ private fun GuideChannelRow(
             }
         }
 
+        Spacer(Modifier.width(2.dp))
+
+        // Programs area - simple Row (not LazyRow) for performance
+        // Tivimate-style: all rows render same time window, no per-row scrolling
         if (visible.isEmpty()) {
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(46.dp)
+                    .height(48.dp)
                     .background(Color(0xFF111111)),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    text = if (isLoadingGuide || !hasLoadedGuide) "  Loading guide..." else "  No guide data",
+                    text = if (!hasGuide) "  Loading..." else "  No guide data",
                     color = Color(0xFF444444),
                     fontSize = 13.sp,
                 )
             }
         } else {
-            LazyRow(
-                state               = rowListState,
-                modifier            = Modifier.weight(1f).height(46.dp),
+            // Simple Row instead of LazyRow - much faster for limited items
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .background(Color(0xFF0A0A0A)),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
-                contentPadding      = PaddingValues(end = 8.dp),
             ) {
-                items(visible, key = { it.start ?: it.title }) { listing ->
-                    val startMs      = parseEpgMs(listing.start)
-                    val stopMs       = parseEpgMs(listing.stop)
-                    val clampedStart = maxOf(startMs, windowStartMs)
-                    val clampedStop  = minOf(stopMs, windowEndMs)
-                    val durationMin  = ((clampedStop - clampedStart) / 60_000f).coerceAtLeast(15f)
-                    val widthDp: Dp  = (durationMin * DP_PER_MIN).dp.coerceAtLeast(60.dp)
-                    val isNow        = startMs <= nowMs && stopMs > nowMs
+                visible.forEach { visibleListing ->
+                    val startMs = visibleListing.startMs
+                    val stopMs = visibleListing.stopMs
+                    val durationMin = ((stopMs - startMs) / 60_000f).coerceAtLeast(15f)
+                    val widthDp = (durationMin * DP_PER_MIN).dp.coerceAtMost(300.dp)
+                    val isNow = startMs <= nowMs && stopMs > nowMs
 
                     ProgramCell(
-                        listing = listing,
+                        listing = visibleListing,
                         widthDp = widthDp,
-                        isNow   = isNow,
+                        isNow = isNow,
                         onClick = { onChannelPlay(channel.id, channel.name) },
                     )
                 }
@@ -495,53 +520,39 @@ private fun CurrentTimeMarker(nowMs: Long, windowStartMs: Long) {
 
 @Composable
 private fun ProgramCell(
-    listing: EpgListing,
+    listing: VisibleListing,
     widthDp: Dp,
     isNow: Boolean,
     onClick: () -> Unit,
 ) {
-    val focusManager = LocalFocusManager.current
-
+    // Lightweight clickable box - navigation handled at row level
     Surface(
-        onClick  = onClick,
+        onClick = onClick,
         modifier = Modifier
-            .onPreviewKeyEvent { event ->
-                if (event.nativeKeyEvent.action == AndroidKeyEvent.ACTION_DOWN) {
-                    when (event.nativeKeyEvent.keyCode) {
-                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> focusManager.moveFocus(FocusDirection.Left)
-                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> focusManager.moveFocus(FocusDirection.Right)
-                        AndroidKeyEvent.KEYCODE_DPAD_UP -> focusManager.moveFocus(FocusDirection.Up)
-                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> focusManager.moveFocus(FocusDirection.Down)
-                        else -> false
-                    }
-                } else {
-                    false
-                }
-            }
             .width(widthDp)
-            .height(46.dp),
-        shape    = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
-        colors   = ClickableSurfaceDefaults.colors(
-            containerColor        = if (isNow) Color(0xFF1A2E1A) else Color(0xFF1E1E1E),
-            focusedContainerColor = if (isNow) Color(0xFF2E7D2E) else Color(0xFF2E2E2E),
+            .height(48.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isNow) Color(0xFF1A3A1A) else Color(0xFF1E1E1E),
+            focusedContainerColor = if (isNow) Color(0xFF2E8D2E) else Color(0xFF3E3E3E),
         ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 3.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text     = listing.title,
-                color    = if (isNow) Color(0xFF90EE90) else Color.White,
+                text = listing.listing.title,
+                color = if (isNow) Color(0xFF90EE90) else Color.White,
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text     = "${formatEpgTime(listing.start)}–${formatEpgTime(listing.stop)}",
-                color    = Color(0xFF888888),
+                text = listing.timeLabel,
+                color = Color(0xFF888888),
                 fontSize = 10.sp,
             )
         }

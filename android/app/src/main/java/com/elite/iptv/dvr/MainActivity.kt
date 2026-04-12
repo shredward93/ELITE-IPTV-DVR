@@ -17,6 +17,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Tivimate-style: start prefetching guide data in background if connected
+        if (viewModel.pcUrl.isNotEmpty()) {
+            viewModel.prefetchAllGuideData()
+        }
+
         setContent {
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxSize().background(Color.Black),

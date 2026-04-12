@@ -111,4 +111,6 @@ data class GuideBundle(
     @SerializedName("guide_epg") val guideEpg: Map<String, List<EpgListing>>,
     @SerializedName("generated_at") val generatedAt: Long,
     @SerializedName("refresh_after_ms") val refreshAfterMs: Long,
+    @SerializedName("channels_by_category") val channelsByCategory: Map<String, List<Channel>>? = null,
+    @SerializedName("full_bundle") val fullBundle: Boolean = false,
 )

@@ -284,6 +284,30 @@ def _fetch_channels_by_category(server_url, username, password, category_id):
         return []
 
 
+def _fetch_all_channels(server_url, username, password):
+    """Fetch every live stream once, then group by category on the backend."""
+    url = (f"{server_url}/player_api.php"
+           f"?username={username}&password={password}&action=get_live_streams")
+    try:
+        streams = requests.get(url, timeout=15).json()
+        result = []
+        for s in streams:
+            if not s.get("stream_id"):
+                continue
+            result.append({
+                "id":             str(s["stream_id"]),
+                "name":           s.get("name", ""),
+                "category_id":    str(s.get("category_id", "") or ""),
+                "category_name":  s.get("category_name", "") or "",
+                "epg_channel_id": s.get("epg_channel_id", "") or "",
+                "stream_icon":    s.get("stream_icon", "") or "",
+            })
+        return result
+    except Exception as exc:
+        print(f"[EPG] fetch_all_channels failed: {exc}")
+        return []
+
+
 # ── guide bundle builder ──────────────────────────────────────────────────────
 
 class _BundleCache:
@@ -334,12 +358,24 @@ def build_guide_bundle(server_url, username, password,
 
     categories = _fetch_categories(server_url, username, password)
     active_cat = resolved_cat or (categories[0]["category_id"] if categories else "")
-    channels   = _fetch_channels_by_category(server_url, username, password, active_cat)
+
+    store_empty = _store.is_empty()
+    full_bundle = not resolved_cat
+
+    if full_bundle:
+        all_channels = _fetch_all_channels(server_url, username, password)
+        channels_by_category = {}
+        for ch in all_channels:
+            category_key = str(ch.get("category_id", "") or "").strip()
+            channels_by_category.setdefault(category_key, []).append(ch)
+
+        channels = channels_by_category.get(active_cat, [])
+    else:
+        channels = _fetch_channels_by_category(server_url, username, password, active_cat)
+        channels_by_category = {active_cat: channels}
 
     guide_epg = {}
-    store_empty = _store.is_empty()
-
-    for ch in channels:
+    for ch in (all_channels if full_bundle else channels):
         cid  = ch["id"]
         eid  = ch.get("epg_channel_id", "")
         name = ch.get("name", "")
@@ -348,6 +384,17 @@ def build_guide_bundle(server_url, username, password,
         else:
             listings = _store.get_listings(eid, name)
             guide_epg[cid] = listings[:limit]
+
+    if full_bundle:
+        # Ensure channels from inactive categories still get guide rows in the payload.
+        # Android uses this to switch categories instantly without reloading.
+        for cat_id, cat_channels in channels_by_category.items():
+            for ch in cat_channels:
+                cid = ch["id"]
+                if cid not in guide_epg:
+                    eid = ch.get("epg_channel_id", "")
+                    name = ch.get("name", "")
+                    guide_epg[cid] = [] if store_empty else _store.get_listings(eid, name)[:limit]
 
     matched = sum(1 for v in guide_epg.values() if v)
     print(f"[EPG] Bundle cat={active_cat}: {len(channels)} channels, "
@@ -358,9 +405,11 @@ def build_guide_bundle(server_url, username, password,
         "category_id":      active_cat,
         "categories":       categories,
         "channels":         channels,
+        "channels_by_category": channels_by_category if full_bundle else {active_cat: channels},
         "guide_epg":        guide_epg,
         "generated_at":     int(time.time() * 1000),
         "refresh_after_ms": int(config.GUIDE_CACHE_TTL_SECONDS * 1000),
+        "full_bundle":      full_bundle,
     }
 
     # Only cache if we actually have EPG data

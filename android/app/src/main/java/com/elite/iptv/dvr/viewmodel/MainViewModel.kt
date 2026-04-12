@@ -22,6 +22,15 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    enum class GuideLoadState {
+        Idle,
+        Loading,
+        Prefetching,
+        Refreshing,
+        Ready,
+        Error,
+    }
+
     private val prefs = application.getSharedPreferences("elite_dvr", Context.MODE_PRIVATE)
 
     var pcUrl by mutableStateOf(prefs.getString("pc_url", "") ?: "")
@@ -51,6 +60,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var guideBundleLoading by mutableStateOf(false)
         private set
 
+    var guideLoadState by mutableStateOf(GuideLoadState.Idle)
+        private set
+
+    var guideLoadError by mutableStateOf<String?>(null)
+        private set
+
     var lastGuideCategoryId by mutableStateOf<String?>(null)
         private set
 
@@ -58,6 +73,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var guideEpg by mutableStateOf<Map<String, List<EpgListing>>>(emptyMap())
+        private set
+
+    // Tivimate-style: pre-fetched guide data for ALL categories
+    var allCategories by mutableStateOf<List<Category>>(emptyList())
+        private set
+
+    // Map categoryId -> channels for that category (all pre-loaded)
+    var channelsByCategory by mutableStateOf<Map<String, List<Channel>>>(emptyMap())
+        private set
+
+    // True when background prefetch is running
+    var guidePrefetching by mutableStateOf(false)
+        private set
+
+    // Progress: how many categories loaded out of total
+    var guidePrefetchProgress by mutableStateOf(0 to 0)
         private set
 
     var lastGuideChannelIds by mutableStateOf<List<String>>(emptyList())
@@ -163,13 +194,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun guideCategories(): List<Category> = allCategories.ifEmpty { categories }
+
+    fun guideChannelsFor(categoryId: String?): List<Channel> {
+        val resolvedId = categoryId?.trim().orEmpty()
+        if (resolvedId.isNotBlank()) {
+            val cached = channelsByCategory[resolvedId]
+            if (!cached.isNullOrEmpty()) return cached
+            if (resolvedId == (lastGuideCategoryId ?: "")) return categoryChannels
+        }
+        return categoryChannels
+    }
+
     fun loadGuideBundle(categoryId: String? = null, limit: Int = 24, refresh: Boolean = false) {
         val normalizedCategoryId = categoryId?.trim().orEmpty()
         val resolvedId = normalizedCategoryId.ifBlank { lastGuideCategoryId ?: "" }
         if (!refresh && guideBundleLoading) return
-        if (!refresh && resolvedId == (lastGuideCategoryId ?: "") && categoryChannels.isNotEmpty() && lastGuideLimit >= limit) return
+        if (!refresh && resolvedId == (lastGuideCategoryId ?: "") && guideChannelsFor(resolvedId).isNotEmpty() && lastGuideLimit >= limit) return
 
         guideBundleLoading = true
+        guideLoadError = null
+        guideLoadState = if (guideBundleSource == null && allCategories.isEmpty()) {
+            GuideLoadState.Loading
+        } else {
+            GuideLoadState.Refreshing
+        }
         viewModelScope.launch {
             runCatching {
                 val bundle: GuideBundle = ApiClient.service.getGuide(
@@ -178,7 +227,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     refresh = refresh,
                 )
                 categories = bundle.categories
+                allCategories = bundle.categories
                 categoryChannels = bundle.channels
+                val bundleChannelsByCategory = bundle.channelsByCategory.orEmpty()
+                channelsByCategory = if (bundleChannelsByCategory.isNotEmpty()) {
+                    channelsByCategory + bundleChannelsByCategory
+                } else {
+                    channelsByCategory + (bundle.categoryId to bundle.channels)
+                }
                 guideBundleSource = bundle.source
                 lastGuideCategoryId = bundle.categoryId
                 lastGuideRefreshAfterMs = bundle.refreshAfterMs
@@ -186,11 +242,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastGuideChannelIds = bundle.channels.map { it.id }
                 guideEpg = guideEpg + bundle.guideEpg
                 guideEpgLoadedChannelIds = guideEpgLoadedChannelIds + bundle.guideEpg.keys
+                guideLoadState = GuideLoadState.Ready
             }.onFailure { e ->
                 println("[ANDROID] Guide bundle request failed: ${e.message}")
+                guideLoadError = e.message
+                guideLoadState = GuideLoadState.Error
             }
             guideBundleLoading = false
         }
+    }
+
+    // Tivimate-style: prefetch ALL categories with channels and EPG in background
+    fun prefetchAllGuideData(limit: Int = 24) {
+        if (guidePrefetching) return
+        if (allCategories.isNotEmpty() && channelsByCategory.isNotEmpty() && guideEpg.isNotEmpty()) return
+
+        guidePrefetching = true
+        guideLoadError = null
+        guideLoadState = GuideLoadState.Prefetching
+        viewModelScope.launch {
+            runCatching {
+                guidePrefetchProgress = 1 to 1
+                println("[ANDROID] Prefetching full guide bundle...")
+
+                val bundle: GuideBundle = ApiClient.service.getGuide(
+                    categoryId = null,
+                    limit = limit,
+                    refresh = false,
+                )
+
+                allCategories = bundle.categories
+                categories = bundle.categories
+                channelsByCategory = bundle.channelsByCategory.orEmpty()
+                categoryChannels = bundle.channels
+                guideEpg = bundle.guideEpg
+                guideEpgLoadedChannelIds = bundle.guideEpg.keys
+                guideBundleSource = bundle.source
+                lastGuideCategoryId = bundle.categoryId
+                lastGuideRefreshAfterMs = bundle.refreshAfterMs
+                lastGuideLimit = limit
+                lastGuideChannelIds = bundle.channels.map { it.id }
+                guidePrefetchProgress = 1 to 1
+                guideLoadState = GuideLoadState.Ready
+                println("[ANDROID] Prefetch complete: ${allCategories.size} categories, ${guideEpg.size} channels with EPG")
+            }.onFailure { e ->
+                println("[ANDROID] Guide prefetch failed: ${e.message}")
+                guideLoadError = e.message
+                guideLoadState = GuideLoadState.Error
+            }
+            guidePrefetching = false
+        }
+    }
+
+    // For Tivimate-style: switch visible category without reloading
+    fun switchGuideCategory(categoryId: String) {
+        lastGuideCategoryId = categoryId
+        categoryChannels = channelsByCategory[categoryId].orEmpty()
     }
 
     fun loadGuideEpg(channelIds: List<String>, limit: Int = 6) {

@@ -44,13 +44,13 @@ iptv-recorder/
 
 **Expand the web remote into the primary UI. CTk becomes a tray icon / background service.**
 
-The web remote already has 80% of the needed UI. The same REST API serves mobile browsers, desktop browsers, and the Android TV app natively. No new mandatory dependencies.
+The web remote already has most of the needed UI. The same REST API serves mobile browsers, desktop browsers, and Kodi-aware workflows without adding new mandatory dependencies.
 
 Transition steps (future, non-blocking):
-1. Extract `static/remote.html` (Phase 2 of migration below — do immediately)
-2. Keep CTk UI as-is; add `pystray` tray icon in a future pass
-3. Expand `static/remote.html` into a full-featured SPA as a separate workstream
-4. Once web UI is feature-complete, CTk window becomes optional/hidden by default
+1. Keep `static/remote.html` as the lightweight scheduling/control surface.
+2. Keep CTk UI as-is; add `pystray` tray icon in a future pass.
+3. Expand `static/remote.html` into a full-featured SPA as a separate workstream.
+4. Once the web UI is feature-complete, CTk window becomes optional/hidden by default.
 
 ---
 

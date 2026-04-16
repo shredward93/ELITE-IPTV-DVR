@@ -18,6 +18,7 @@ class RecordingJob:
         self.channel_id    = channel_id
         self.start_time    = start_time
         self.duration_mins = duration_mins
+        self.duration_secs = duration_mins * 60
         self.output_dir    = output_dir
 
         self.status          = "waiting"
@@ -37,6 +38,18 @@ class RecordingJob:
         self.card_frame   = None
         self.status_label = None
         self.stop_btn     = None
+
+
+def job_duration_secs(job) -> int:
+    return max(1, int(getattr(job, "duration_secs", getattr(job, "duration_mins", 0) * 60)))
+
+
+def job_remaining_secs(job) -> int:
+    if job.actual_start:
+        elapsed = (datetime.datetime.now() - job.actual_start).total_seconds()
+    else:
+        elapsed = (datetime.datetime.now() - job.start_time).total_seconds()
+    return max(0, int(job_duration_secs(job) - elapsed))
 
 
 def run_job(job):
@@ -63,7 +76,7 @@ def run_job(job):
 
     while job.status == "recording":
         elapsed   = (datetime.datetime.now() - job.actual_start).total_seconds()
-        remaining = job.duration_mins * 60 - elapsed
+        remaining = job_duration_secs(job) - elapsed
         if remaining <= 3:
             break
 
@@ -119,7 +132,7 @@ def run_job(job):
             return
 
         elapsed   = (datetime.datetime.now() - job.actual_start).total_seconds()
-        remaining = job.duration_mins * 60 - elapsed
+        remaining = job_duration_secs(job) - elapsed
         if remaining <= 3:
             break
 

@@ -5,7 +5,10 @@ Imports all core modules; never calls FFmpeg directly.
 """
 
 import datetime
+import json
 import os
+import time
+from pathlib import Path
 import queue
 import subprocess
 import sys
@@ -22,7 +25,8 @@ from core.credentials import load_credentials
 from core.epg import fetch_epg
 from core.favorites import load_favorites, save_favorites
 from core.dvr_manager import DVRManager
-from core.recorder import RecordingJob, run_job
+from core.recorder import RecordingJob, run_job, job_duration_secs
+from core.startup import is_autostart_enabled
 from core.tunnel import TunnelManager
 from core.web_server import WebContext, start_web_server
 from ui.dialogs import SetupWizard, CredentialsDialog
@@ -70,11 +74,13 @@ class IPTVRecorderApp(ctk.CTk):
         self.backup_channel_name   = None
         self.backup_channel_id     = None
         self.current_remote_url    = None
+        self.current_tunnel_url    = None
 
         self.tunnel_mgr = TunnelManager()
 
         self._load_favorites()
         self._build_ui()
+        self._load_scheduled_recordings()
         self._tick()
         self._start_web_server()
 
@@ -87,7 +93,7 @@ class IPTVRecorderApp(ctk.CTk):
 
     def _build_ui(self):
         main_container = ctk.CTkFrame(self, fg_color="transparent")
-        main_container.pack(fill="both", expand=True, padx=20, pady=20)
+        main_container.pack(fill="both", expand=True, padx=12, pady=12)
 
         left_pane = ctk.CTkFrame(main_container, fg_color="transparent")
         left_pane.pack(side="left", fill="both", expand=True, padx=(0, 10))
@@ -97,30 +103,32 @@ class IPTVRecorderApp(ctk.CTk):
         right_pane.pack(side="right", fill="y", expand=False, padx=(10, 0))
 
         title_row = ctk.CTkFrame(left_pane, fg_color="transparent")
-        title_row.pack(fill="x", pady=(0, 12))
+        title_row.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(title_row, text="ELITE IPTV Recorder",
-                     font=("Arial", 22, "bold")).pack(side="left")
-        ctk.CTkButton(title_row, text="⚙ Settings", width=100, height=34,
+                     font=("Arial", 18, "bold")).pack(side="left")
+        ctk.CTkButton(title_row, text="⚙ Settings", width=96, height=30,
                       fg_color="#484949", hover_color="#575959",
                       command=self._open_settings).pack(side="right")
 
-        panel = ctk.CTkFrame(left_pane)
-        panel.pack(fill="both", expand=True)
+        _panel_scroll = ctk.CTkScrollableFrame(left_pane, fg_color="transparent")
+        _panel_scroll.pack(fill="both", expand=True)
+        panel = ctk.CTkFrame(_panel_scroll)
+        panel.pack(fill="x", expand=False)
 
         # ── Saved Channels / Favorites ──
         self.fav_section = ctk.CTkFrame(panel, fg_color="transparent")
-        self.fav_section.pack(fill="x", padx=15, pady=(10, 4))
+        self.fav_section.pack(fill="x", padx=12, pady=(8, 2))
         fav_header = ctk.CTkFrame(self.fav_section, fg_color="transparent")
         fav_header.pack(fill="x")
         ctk.CTkLabel(fav_header, text="Saved Channels", font=("Arial", 12, "bold"), anchor="w").pack(side="left")
-        _fav_wrapper = ctk.CTkFrame(self.fav_section, height=120, fg_color="transparent")
+        _fav_wrapper = ctk.CTkFrame(self.fav_section, height=100, fg_color="transparent")
         _fav_wrapper.pack(fill="x", pady=(4, 0))
         _fav_wrapper.pack_propagate(False)
         self.fav_scroll = ctk.CTkScrollableFrame(_fav_wrapper, fg_color="#2E2F2F")
         self.fav_scroll.pack(fill="both", expand=True)
         self._refresh_favorites_panel()
 
-        ctk.CTkFrame(panel, height=1, fg_color="#484949").pack(fill="x", padx=15, pady=(8, 8))
+        ctk.CTkFrame(panel, height=1, fg_color="#484949").pack(fill="x", padx=12, pady=(6, 6))
 
         # ── Live Sports Today (collapsible) ──
         self.sports_frame = ctk.CTkFrame(panel, fg_color="transparent")
@@ -159,22 +167,22 @@ class IPTVRecorderApp(ctk.CTk):
         self.sports_scroll = ctk.CTkScrollableFrame(_spt_wrapper, fg_color="#2E2F2F")
         self.sports_scroll.pack(fill="both", expand=True)
 
-        self.sports_frame.pack(fill="x", padx=15, pady=(0, 4))
+        self.sports_frame.pack(fill="x", padx=12, pady=(0, 2))
 
-        ctk.CTkFrame(panel, height=1, fg_color="#484949").pack(fill="x", padx=15, pady=(8, 8))
+        ctk.CTkFrame(panel, height=1, fg_color="#484949").pack(fill="x", padx=12, pady=(6, 6))
 
         # ── Channel search ──
-        ctk.CTkLabel(panel, text="Search Channel", anchor="w").pack(fill="x", padx=15, pady=(0, 2))
+        ctk.CTkLabel(panel, text="Search Channel", anchor="w").pack(fill="x", padx=12, pady=(0, 2))
         self.search_entry = ctk.CTkEntry(panel, placeholder_text="Loading channels — please wait…", state="disabled")
-        self.search_entry.pack(fill="x", padx=15, pady=(0, 4))
+        self.search_entry.pack(fill="x", padx=12, pady=(0, 4))
         self.search_entry.bind("<KeyRelease>", self._on_search_key)
 
-        self.results_frame = ctk.CTkScrollableFrame(panel, height=160, fg_color="#2E2F2F")
+        self.results_frame = ctk.CTkScrollableFrame(panel, height=130, fg_color="#2E2F2F")
         self._results_anchor = ctk.CTkFrame(panel, height=0, fg_color="transparent")
-        self._results_anchor.pack(fill="x", padx=15)
+        self._results_anchor.pack(fill="x", padx=12)
 
         sel_row = ctk.CTkFrame(panel, fg_color="transparent")
-        sel_row.pack(fill="x", padx=15, pady=(0, 4))
+        sel_row.pack(fill="x", padx=12, pady=(0, 4))
         self.sel_row = sel_row
         self.selected_label = ctk.CTkLabel(sel_row, text="No channel selected", text_color="gray", anchor="w")
         self.selected_label.pack(side="left", fill="x", expand=True)
@@ -193,7 +201,7 @@ class IPTVRecorderApp(ctk.CTk):
 
         # EPG panel — collapsible, hidden by default
         _epg_section = ctk.CTkFrame(panel, fg_color="transparent")
-        _epg_section.pack(fill="x", padx=15, pady=(0, 2))
+        _epg_section.pack(fill="x", padx=12, pady=(0, 2))
         _epg_hdr = ctk.CTkFrame(_epg_section, fg_color="transparent")
         _epg_hdr.pack(fill="x")
         self._epg_toggle_btn = ctk.CTkButton(
@@ -241,10 +249,10 @@ class IPTVRecorderApp(ctk.CTk):
             fg_color="#575959", hover_color="#484949",
             command=self._clear_backup_channel, state="disabled")
         self.backup_clear_btn.pack(side="right", padx=(4, 0))
-        self.backup_frame.pack(fill="x", padx=15, pady=(0, 4))
+        self.backup_frame.pack(fill="x", padx=12, pady=(0, 4))
 
         self.td_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        self.td_frame.pack(fill="x", padx=15, pady=(4, 10))
+        self.td_frame.pack(fill="x", padx=12, pady=(4, 6))
         left = ctk.CTkFrame(self.td_frame, fg_color="transparent")
         left.pack(side="left", expand=True, fill="x", padx=(0, 5))
         ctk.CTkLabel(left, text="Start Time", anchor="w").pack(fill="x")
@@ -257,9 +265,9 @@ class IPTVRecorderApp(ctk.CTk):
         self.duration_input.pack(fill="x")
         self.duration_input.insert(0, "180")
 
-        ctk.CTkLabel(panel, text="Output Folder", anchor="w").pack(fill="x", padx=15, pady=(4, 2))
+        ctk.CTkLabel(panel, text="Output Folder", anchor="w").pack(fill="x", padx=12, pady=(4, 2))
         folder_row = ctk.CTkFrame(panel, fg_color="transparent")
-        folder_row.pack(fill="x", padx=15, pady=(0, 10))
+        folder_row.pack(fill="x", padx=12, pady=(0, 6))
         self.folder_label = ctk.CTkLabel(folder_row, text=self.output_dir, anchor="w", text_color="gray")
         self.folder_label.pack(side="left", fill="x", expand=True)
         ctk.CTkButton(folder_row, text="Open", width=60, fg_color="#575959", hover_color="#484949",
@@ -267,7 +275,7 @@ class IPTVRecorderApp(ctk.CTk):
         ctk.CTkButton(folder_row, text="Browse…", width=90, command=self._pick_folder).pack(side="right")
 
         btn_row = ctk.CTkFrame(panel, fg_color="transparent")
-        btn_row.pack(fill="x", padx=15, pady=(4, 14))
+        btn_row.pack(fill="x", padx=12, pady=(4, 10))
         self.record_now_btn = ctk.CTkButton(
             btn_row, text="Record Now", command=self._record_now, state="disabled",
             fg_color="#c0392b", hover_color="#e74c3c"
@@ -286,12 +294,15 @@ class IPTVRecorderApp(ctk.CTk):
 
         # ── Right Pane ──
         status_panel = ctk.CTkFrame(right_pane)
-        status_panel.pack(fill="x", pady=(0, 12))
+        status_panel.pack(fill="x", pady=(0, 8))
         self.global_status = ctk.CTkLabel(status_panel, text="Fetching channel list…", text_color="gray")
-        self.global_status.pack(pady=(8, 2))
+        self.global_status.pack(pady=(6, 2))
+
+        self.startup_label = ctk.CTkLabel(status_panel, text="Startup: checking…", text_color="gray40", font=("Arial", 10))
+        self.startup_label.pack(pady=(0, 4))
 
         remote_frame = ctk.CTkFrame(status_panel, fg_color="transparent")
-        remote_frame.pack(pady=(0, 8))
+        remote_frame.pack(pady=(0, 4))
         self.remote_label = ctk.CTkLabel(remote_frame, text="Remote: starting…",
                                          text_color="gray40", font=("Arial", 10), cursor="hand2")
         self.remote_label.pack(side="left")
@@ -304,14 +315,34 @@ class IPTVRecorderApp(ctk.CTk):
         )
         self.remote_copy_btn.pack(side="left", padx=(8, 0))
 
-        ctk.CTkLabel(right_pane, text="Active Recordings", font=("Arial", 14, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        tunnel_frame = ctk.CTkFrame(status_panel, fg_color="transparent")
+        tunnel_frame.pack(pady=(0, 8))
+        self.tunnel_label = ctk.CTkLabel(
+            tunnel_frame,
+            text="Tunnel: not configured",
+            text_color="gray40",
+            font=("Arial", 10),
+            cursor="hand2",
+        )
+        self.tunnel_label.pack(side="left")
+        self.tunnel_label.bind("<Button-1>", lambda e: self._open_tunnel_url())
+        self.tunnel_copy_btn = ctk.CTkButton(
+            tunnel_frame, text="Copy", width=40, height=20, font=("Arial", 10),
+            fg_color="#575959", hover_color="#484949",
+            command=self._copy_tunnel_url, state="disabled"
+        )
+        self.tunnel_copy_btn.pack(side="left", padx=(8, 0))
+        self._refresh_remote_links()
+        self._refresh_startup_status()
+
+        ctk.CTkLabel(right_pane, text="Active Recordings", font=("Arial", 13, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
         self.recordings_frame = ctk.CTkScrollableFrame(right_pane)
-        self.recordings_frame.pack(fill="both", expand=True, pady=(0, 12))
+        self.recordings_frame.pack(fill="both", expand=True, pady=(0, 8))
         self.no_recordings_label = ctk.CTkLabel(self.recordings_frame, text="No recordings scheduled.", text_color="gray")
         self.no_recordings_label.pack(pady=10)
 
-        ctk.CTkLabel(right_pane, text="Recording Log", font=("Arial", 14, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
-        self.log_box = ctk.CTkTextbox(right_pane, height=200, state="disabled")
+        ctk.CTkLabel(right_pane, text="Recording Log", font=("Arial", 13, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        self.log_box = ctk.CTkTextbox(right_pane, height=160, state="disabled")
         self.log_box.pack(fill="x", pady=(0, 0))
 
         self.after(200, self._install_window_scroll)
@@ -343,8 +374,82 @@ class IPTVRecorderApp(ctk.CTk):
                     config.DVR_MAX_GB = int(data["dvr_max_gb"])
                 except (ValueError, TypeError):
                     pass
+            if "schedule_file" in data and data["schedule_file"]:
+                config.SCHEDULES_FILE = data["schedule_file"]
         except Exception:
             pass
+
+    def _persist_recording_jobs(self):
+        try:
+            payload = []
+            for job in self.recording_jobs:
+                if job.status not in ("waiting", "recording"):
+                    continue
+                payload.append({
+                    "channel_name": job.channel_name,
+                    "channel_id": job.channel_id,
+                    "start_time": job.start_time.isoformat(),
+                    "duration_mins": int(getattr(job, "duration_mins", 0)),
+                    "duration_secs": int(getattr(job, "duration_secs", job_duration_secs(job))),
+                    "output_dir": job.output_dir,
+                    "backup_channel_id": job.backup_channel_id,
+                    "backup_channel_name": job.backup_channel_name,
+                })
+            with open(config.SCHEDULES_FILE, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except Exception:
+            pass
+
+    def _load_scheduled_recordings(self):
+        try:
+            with open(config.SCHEDULES_FILE, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return
+
+        if not isinstance(payload, list):
+            return
+
+        now = datetime.datetime.now()
+        restored = 0
+        for item in payload:
+            try:
+                channel_name = str(item.get("channel_name", "")).strip()
+                channel_id = str(item.get("channel_id", "")).strip()
+                start_time = datetime.datetime.fromisoformat(str(item.get("start_time", "")))
+                duration_secs = max(1, int(item.get("duration_secs", int(item.get("duration_mins", 0)) * 60)))
+            except Exception:
+                continue
+
+            if not channel_name or not channel_id:
+                continue
+
+            end_time = start_time + datetime.timedelta(seconds=duration_secs)
+            if end_time <= now:
+                continue
+
+            if start_time <= now:
+                remaining_secs = max(1, int((end_time - now).total_seconds()))
+                job_start_time = now
+                job_duration_mins = max(1, int((remaining_secs + 59) // 60))
+                job_duration_secs = remaining_secs
+            else:
+                job_start_time = start_time
+                job_duration_mins = max(1, int((duration_secs + 59) // 60))
+                job_duration_secs = duration_secs
+
+            job = RecordingJob(channel_name, channel_id, job_start_time, job_duration_mins, item.get("output_dir") or self.output_dir)
+            job.duration_secs = job_duration_secs
+            job.backup_channel_id = item.get("backup_channel_id") or None
+            job.backup_channel_name = item.get("backup_channel_name") or None
+            self.recording_jobs.append(job)
+            self._add_recording_card(job)
+            threading.Thread(target=run_job, args=(job,), daemon=True).start()
+            restored += 1
+
+        if restored:
+            self._log(f"Restored {restored} queued recording(s) from the last session.")
+        self._persist_recording_jobs()
 
     def _save_settings(self):
         try:
@@ -355,6 +460,7 @@ class IPTVRecorderApp(ctk.CTk):
                     "dvr_buffer_dir": config.DVR_BUFFER_DIR,
                     "dvr_max_hours":  config.DVR_MAX_HOURS,
                     "dvr_max_gb":     config.DVR_MAX_GB,
+                    "schedule_file":  config.SCHEDULES_FILE,
                 }, f, indent=2)
         except Exception:
             pass
@@ -435,8 +541,7 @@ class IPTVRecorderApp(ctk.CTk):
         try:
             url = start_web_server(ctx)
             self.current_remote_url = url
-            self.remote_label.configure(text=f"Remote: {url}", text_color="#3498db")
-            self.remote_copy_btn.configure(state="normal")
+            self._refresh_remote_links()
             self._log(f"Remote control active: {url}")
             self.tunnel_mgr.start()
         except OSError:
@@ -462,7 +567,7 @@ class IPTVRecorderApp(ctk.CTk):
                                    "status_text": txt, "stoppable": True})
             elif job.status == "recording" and job.actual_start:
                 elapsed   = int((now - job.actual_start).total_seconds())
-                remaining = max(0, job.duration_mins * 60 - elapsed)
+                remaining = max(0, job_duration_secs(job) - elapsed)
                 txt = (f"RECORDING  •  {str(datetime.timedelta(seconds=elapsed))} elapsed  •  "
                        f"{str(datetime.timedelta(seconds=remaining))} remaining")
                 recordings.append({"name": job.channel_name, "status": job.status,
@@ -529,6 +634,7 @@ class IPTVRecorderApp(ctk.CTk):
             job.backup_channel_name = self.backup_channel_name
             self.recording_jobs.append(job)
             self._add_recording_card(job)
+            self._persist_recording_jobs()
             backup_info = f"  Backup: '{self.backup_channel_name}'" if self.backup_channel_name else ""
             if action.get("start_time") == "NOW":
                 self._log(f"[Remote] Started recording '{job.channel_name}' for {job.duration_mins} min.{backup_info}")
@@ -556,9 +662,11 @@ class IPTVRecorderApp(ctk.CTk):
         load_credentials()
         self.channel_map = {}
         self.all_channel_names = []
-        for w in self.results_frame.winfo_children():
-            w.destroy()
-        self.results_frame.pack_forget()
+        self.m3u_text = ""
+        self._fetch_start = datetime.datetime.now()
+        self._channels_loaded = False
+        self._refresh_startup_status()
+        threading.Thread(target=self._fetch_channels, daemon=True).start()
         self.search_entry.delete(0, "end")
         self.search_entry.configure(state="disabled", placeholder_text="Loading channels — please wait…")
         self.backup_search_entry.configure(state="disabled", placeholder_text="Search for backup channel…")
@@ -572,6 +680,7 @@ class IPTVRecorderApp(ctk.CTk):
         self.record_now_btn.configure(state="disabled")
         self.schedule_btn.configure(state="disabled")
         self.save_m3u_btn.configure(state="disabled")
+        self._refresh_remote_links()
 
         if config.SERVER_URL and config.USERNAME and config.PASSWORD:
             self._start_fetching()
@@ -579,12 +688,18 @@ class IPTVRecorderApp(ctk.CTk):
             self._set_status("Missing credentials. Please configure in Settings.", "#e74c3c")
 
     def _fetch_channels(self):
-        url = (f"{config.SERVER_URL}/get.php?username={config.USERNAME}"
-               f"&password={config.PASSWORD}&type=m3u_plus&output=ts")
         try:
-            response = requests.get(url, timeout=60)
-            self.m3u_text = response.text
-            lines = response.text.splitlines()
+            trimmed_path = Path(getattr(config, "TRIMMED_M3U_PATH", "")).expanduser()
+            if trimmed_path.exists() and trimmed_path.is_file() and trimmed_path.stat().st_size > 0:
+                self.m3u_text = trimmed_path.read_text(encoding="utf-8", errors="replace")
+                source_label = str(trimmed_path)
+            else:
+                url = f"{config.SERVER_URL}/get.php?username={config.USERNAME}&password={config.PASSWORD}&type=m3u_plus&output=ts"
+                response = requests.get(url, timeout=60)
+                self.m3u_text = response.text
+                source_label = url
+
+            lines = self.m3u_text.splitlines()
             current_name = ""
             for line in lines:
                 if line.startswith("#EXTINF"):
@@ -595,6 +710,7 @@ class IPTVRecorderApp(ctk.CTk):
                     current_name = ""
             self.all_channel_names = sorted(self.channel_map.keys())
             self._fetch_result = ("ok", len(self.all_channel_names))
+            self._log(f"Loaded channels from {source_label}")
         except Exception as e:
             self._fetch_result = ("err", str(e))
 
@@ -879,6 +995,36 @@ class IPTVRecorderApp(ctk.CTk):
             w.destroy()
         ctk.CTkLabel(self.epg_frame, text="Fetching program guide…", text_color="gray").pack(pady=8, padx=10)
 
+    @staticmethod
+    def _parse_epg_ts(val):
+        if val is None:
+            return None
+        s = str(val).strip()
+        # Unix timestamp (plain digits, e.g. "1776265200")
+        if s.isdigit() and len(s) > 8:
+            return datetime.datetime.fromtimestamp(int(s))
+        # XMLTV compact format "20260415190000 -0400"
+        if len(s) >= 14 and s[:14].isdigit():
+            digits = s[:14]
+            dt = datetime.datetime(
+                int(digits[0:4]), int(digits[4:6]),  int(digits[6:8]),
+                int(digits[8:10]), int(digits[10:12]), int(digits[12:14]),
+            )
+            tz = s[14:].strip()
+            if tz and tz[0] in ("+", "-"):
+                sign = 1 if tz[0] == "+" else -1
+                h, m = int(tz[1:3]), int(tz[3:5]) if len(tz) >= 5 else 0
+                dt = dt - datetime.timedelta(hours=h * sign, minutes=m * sign)
+                dt = dt + datetime.timedelta(seconds=-time.timezone if not time.daylight else -time.altzone)
+            return dt
+        # Xtream API datetime string "2026-04-15 07:00:00" or "2026-04-15T07:00:00"
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.datetime.strptime(s[:19], fmt)
+            except ValueError:
+                pass
+        return None
+
     def _show_epg(self, channel_id, listings):
         if channel_id != self._epg_channel_id:
             return
@@ -893,8 +1039,12 @@ class IPTVRecorderApp(ctk.CTk):
         first = True
         for listing in listings:
             try:
-                start = datetime.datetime.fromtimestamp(int(listing["start_timestamp"]))
-                stop  = datetime.datetime.fromtimestamp(int(listing["stop_timestamp"]))
+                raw_start = listing.get("start") or listing.get("start_timestamp")
+                raw_stop  = listing.get("stop")  or listing.get("stop_timestamp")
+                start = self._parse_epg_ts(raw_start)
+                stop  = self._parse_epg_ts(raw_stop)
+                if start is None or stop is None:
+                    continue
             except Exception:
                 continue
             title = self._decode_epg(listing.get("title", ""))
@@ -995,6 +1145,7 @@ class IPTVRecorderApp(ctk.CTk):
         job.backup_channel_name = self.backup_channel_name
         self.recording_jobs.append(job)
         self._add_recording_card(job)
+        self._persist_recording_jobs()
         backup_info = f"  Backup: '{self.backup_channel_name}'" if self.backup_channel_name else ""
         self._log(f"Started recording '{job.channel_name}' for {duration_mins} min.{backup_info}")
         self._set_status(f"Recording: {job.channel_name}", "#e74c3c")
@@ -1031,6 +1182,7 @@ class IPTVRecorderApp(ctk.CTk):
         job.backup_channel_name = self.backup_channel_name
         self.recording_jobs.append(job)
         self._add_recording_card(job)
+        self._persist_recording_jobs()
         backup_info = f"  Backup: '{self.backup_channel_name}'" if self.backup_channel_name else ""
         self._log(f"Scheduled '{job.channel_name}' at {start_time.strftime('%I:%M %p')} for {duration_mins} min.{backup_info}")
         self._set_status(f"Scheduled: {job.channel_name} at {start_time_str}", "#2ecc71")
@@ -1087,7 +1239,8 @@ class IPTVRecorderApp(ctk.CTk):
         if tunnel_url is not None:
             self.tunnel_mgr.url = None
             self.current_remote_url = tunnel_url
-            self.remote_label.configure(text=f"Remote (public): {tunnel_url}", text_color="#3498db")
+            self.current_tunnel_url = tunnel_url
+            self._refresh_remote_links()
             self._log(f"[Tunnel] URL active: {tunnel_url}")
         tunnel_log = self.tunnel_mgr.log
         if tunnel_log is not None:
@@ -1106,6 +1259,7 @@ class IPTVRecorderApp(ctk.CTk):
                 job.finish_msg = None
                 self._finalize_card(job, msg, color)
                 self._log(f"{msg} '{job.channel_name}'")
+                self._persist_recording_jobs()
                 if self._status_text == f"Recording: {job.channel_name}":
                     self._set_status(f"Recording finished: {job.channel_name}", "#2ecc71")
                 continue
@@ -1115,7 +1269,7 @@ class IPTVRecorderApp(ctk.CTk):
                     text=f"Starts in {str(datetime.timedelta(seconds=secs))}", text_color="#f39c12")
             elif job.status == "recording" and job.actual_start:
                 elapsed   = int((now - job.actual_start).total_seconds())
-                remaining = max(0, job.duration_mins * 60 - elapsed)
+                remaining = max(0, job_duration_secs(job) - elapsed)
                 on_bkup      = job.active_channel_name != job.channel_name
                 backup_str   = f"[BACKUP: {job.active_channel_name}]  " if on_bkup else ""
                 reconnect_str = f"  |  Reconnects: {job.reconnect_count}" if job.reconnect_count > 0 else ""
@@ -1136,6 +1290,7 @@ class IPTVRecorderApp(ctk.CTk):
             job.process.terminate()
         self._finalize_card(job, "Stopped by user.", "#e67e22")
         self._log(f"User stopped: '{job.channel_name}'")
+        self._persist_recording_jobs()
         if self._status_text == f"Recording: {job.channel_name}":
             self._set_status(f"Stopped: {job.channel_name}", "#e67e22")
 
@@ -1155,6 +1310,7 @@ class IPTVRecorderApp(ctk.CTk):
                     job.process.terminate()
                 except Exception:
                     pass
+        self._persist_recording_jobs()
         self.destroy()
         sys.exit(0)
 
@@ -1180,6 +1336,44 @@ class IPTVRecorderApp(ctk.CTk):
         self._status_text = message
         self.global_status.configure(text=message, text_color=color)
 
+    def _configured_tunnel_url(self):
+        provider = (config.TUNNEL_PROVIDER or "").strip()
+        if provider == "cloudflare":
+            domain = (config.CLOUDFLARE_DOMAIN or "").strip()
+            return f"https://{domain}" if domain else ""
+        elif provider == "instatunnel":
+            subdomain = (config.INSTATUNNEL_SUBDOMAIN or "").strip()
+            return f"https://{subdomain}.instatunnel.my" if subdomain else ""
+        return ""
+
+    def _refresh_remote_links(self):
+        if self.current_remote_url:
+            remote_text = (
+                f"Remote (public): {self.current_remote_url}"
+                if self.current_remote_url.startswith("https://")
+                else f"Remote: {self.current_remote_url}"
+            )
+            self.remote_label.configure(text=remote_text, text_color="#3498db")
+            self.remote_copy_btn.configure(state="normal")
+        else:
+            self.remote_label.configure(text="Remote: starting…", text_color="gray40")
+            self.remote_copy_btn.configure(state="disabled")
+
+        tunnel_url = self.current_tunnel_url or self._configured_tunnel_url()
+        if tunnel_url:
+            self.tunnel_label.configure(text=f"Tunnel: {tunnel_url}", text_color="#3498db")
+            self.tunnel_copy_btn.configure(state="normal")
+        else:
+            self.tunnel_label.configure(text="Tunnel: not configured", text_color="gray40")
+            self.tunnel_copy_btn.configure(state="disabled")
+
+    def _refresh_startup_status(self):
+        enabled = is_autostart_enabled()
+        if enabled:
+            self.startup_label.configure(text="Startup: enabled", text_color="#2ecc71")
+        else:
+            self.startup_label.configure(text="Startup: disabled", text_color="gray40")
+
     def _copy_remote_url(self):
         if self.current_remote_url:
             self.clipboard_clear()
@@ -1188,6 +1382,21 @@ class IPTVRecorderApp(ctk.CTk):
             self._log("Remote URL copied to clipboard.")
             self.remote_copy_btn.configure(text="Copied!", fg_color="#1a6b3a")
             self.after(2000, lambda: self.remote_copy_btn.configure(text="Copy", fg_color="#575959"))
+
+    def _open_tunnel_url(self):
+        tunnel_url = self.current_tunnel_url or self._configured_tunnel_url()
+        if tunnel_url:
+            webbrowser.open(tunnel_url)
+
+    def _copy_tunnel_url(self):
+        tunnel_url = self.current_tunnel_url or self._configured_tunnel_url()
+        if tunnel_url:
+            self.clipboard_clear()
+            self.clipboard_append(tunnel_url)
+            self.update()
+            self._log("Tunnel URL copied to clipboard.")
+            self.tunnel_copy_btn.configure(text="Copied!", fg_color="#1a6b3a")
+            self.after(2000, lambda: self.tunnel_copy_btn.configure(text="Copy", fg_color="#575959"))
 
     def _bind_scroll_tree(self, _scrollable_frame):
         pass

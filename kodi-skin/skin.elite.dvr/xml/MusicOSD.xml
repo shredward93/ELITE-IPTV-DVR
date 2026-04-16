@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="12006">
+    <defaultcontrol always="true">0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Music OSD Bottom Bar -->
+        <control type="group">
+            <left>0</left>
+            <bottom>0</bottom>
+            <width>1920</width>
+            <height>120</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>1920</width>
+                <height>120</height>
+                <texture colordiffuse="C0000000">white.png</texture>
+            </control>
+
+            <!-- Song Title -->
+            <control type="label">
+                <left>27</left>
+                <top>15</top>
+                <width>1200</width>
+                <height>30</height>
+                <label>$INFO[MusicPlayer.Title]</label>
+                <font>font22_header</font>
+                <textcolor>text_primary</textcolor>
+            </control>
+
+            <!-- Artist -->
+            <control type="label">
+                <left>27</left>
+                <top>50</top>
+                <width>800</width>
+                <height>25</height>
+                <label>$INFO[MusicPlayer.Artist]</label>
+                <font>font14_label</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Progress -->
+            <control type="progress" id="1">
+                <left>27</left>
+                <top>90</top>
+                <width>1866</width>
+                <height>8</height>
+                <texturebg colordiffuse="bg_card">white.png</texturebg>
+                <lefttexture>-</lefttexture>
+                <midtexture colordiffuse="elite_accent">white.png</midtexture>
+                <righttexture>-</righttexture>
+                <info>Player.Progress</info>
+            </control>
+        </control>
+    </controls>
+</window>

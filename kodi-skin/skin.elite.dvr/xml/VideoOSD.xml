@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="12901">
+    <defaultcontrol always="true">0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <animation effect="fade" start="0" end="100" time="200">WindowOpen</animation>
+    <animation effect="fade" start="100" end="0" time="200">WindowClose</animation>
+    <controls>
+        <!-- OSD Bottom Bar -->
+        <control type="group">
+            <left>0</left>
+            <bottom>0</bottom>
+            <width>1920</width>
+            <height>160</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>1920</width>
+                <height>160</height>
+                <texture colordiffuse="C0000000">white.png</texture>
+            </control>
+
+            <!-- Now Playing -->
+            <control type="label">
+                <left>27</left>
+                <top>15</top>
+                <width>1400</width>
+                <height>30</height>
+                <label>$INFO[Player.Title]</label>
+                <font>font22_header</font>
+                <textcolor>text_primary</textcolor>
+            </control>
+
+            <!-- Time -->
+            <control type="label">
+                <left>27</left>
+                <top>55</top>
+                <width>200</width>
+                <height>25</height>
+                <label>$INFO[Player.Time] / $INFO[Player.Duration]</label>
+                <font>font14_label</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Progress Bar -->
+            <control type="progress" id="1">
+                <left>27</left>
+                <top>95</top>
+                <width>1866</width>
+                <height>8</height>
+                <texturebg colordiffuse="bg_card">white.png</texturebg>
+                <lefttexture>-</lefttexture>
+                <midtexture colordiffuse="elite_accent">white.png</midtexture>
+                <righttexture>-</righttexture>
+                <info>Player.Progress</info>
+            </control>
+
+            <!-- Channel Info (for PVR) -->
+            <control type="label">
+                <left>27</left>
+                <top>115</top>
+                <width>600</width>
+                <height>25</height>
+                <label>$INFO[VideoPlayer.ChannelName]</label>
+                <font>font14_label</font>
+                <textcolor>text_muted</textcolor>
+            </control>
+        </control>
+    </controls>
+</window>

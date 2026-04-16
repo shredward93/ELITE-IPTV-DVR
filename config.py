@@ -22,6 +22,7 @@ else:
 FAVORITES_FILE   = os.path.join(_APP_DIR, "favorites.json")
 CREDENTIALS_FILE = os.path.join(_APP_DIR, "credentials.json")
 SETTINGS_FILE    = os.path.join(_APP_DIR, "settings.json")
+SCHEDULES_FILE   = os.path.join(_APP_DIR, "scheduled_recordings.json")
 
 WEB_PORT = 8080
 
@@ -34,6 +35,11 @@ XMLTV_SOURCE_URL  = os.getenv("XMLTV_SOURCE_URL", "").strip()
 XMLTV_SOURCE_PATH = os.getenv("XMLTV_SOURCE_PATH", "").strip()
 XMLTV_CACHE_PATH  = os.path.join(_APP_DIR, "xmltv_cache.xml")
 
+# Optional trimmed IPTV inputs. When present, the desktop app can prefer these
+# files instead of reusing the full provider playlist / guide.
+TRIMMED_M3U_PATH   = os.getenv("TRIMMED_M3U_PATH", os.path.join(_APP_DIR, "Playlist.trimmed.m3u")).strip()
+TRIMMED_XMLTV_PATH = os.getenv("TRIMMED_XMLTV_PATH", os.path.join(_APP_DIR, "xmltv_cache.trimmed.xml")).strip()
+
 # DVR settings — overridden by core.dvr_settings.load_dvr_settings()
 DVR_BUFFER_DIR = os.path.join(_APP_DIR, "dvr_buffer")
 DVR_MAX_HOURS  = 6
@@ -43,5 +49,14 @@ DVR_MAX_GB     = 50
 SERVER_URL            = ""
 USERNAME              = ""
 PASSWORD              = ""
+
+# Tunnel provider: "instatunnel" | "cloudflare"
+TUNNEL_PROVIDER       = ""
+
+# InstaTunnel settings
 INSTATUNNEL_API_KEY   = ""
 INSTATUNNEL_SUBDOMAIN = ""
+
+# Cloudflare Tunnel settings
+CLOUDFLARE_TUNNEL_TOKEN = ""   # Optional: for named tunnel auth
+CLOUDFLARE_DOMAIN       = ""   # e.g. iptv.yourdomain.com

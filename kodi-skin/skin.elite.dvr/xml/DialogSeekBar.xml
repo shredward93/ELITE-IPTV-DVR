@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="10115">
+    <defaultcontrol>0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <animation effect="fade" start="0" end="100" time="200">WindowOpen</animation>
+    <animation effect="fade" start="100" end="0" time="200">WindowClose</animation>
+    <controls>
+        <!-- Seek Bar Overlay -->
+        <control type="group">
+            <left>0</left>
+            <bottom>0</bottom>
+            <width>1920</width>
+            <height>120</height>
+
+            <!-- Background gradient -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>1920</width>
+                <height>120</height>
+                <texture colordiffuse="C0000000">white.png</texture>
+            </control>
+
+            <!-- Current Time -->
+            <control type="label" id="1">
+                <left>27</left>
+                <top>15</top>
+                <width>200</width>
+                <height>25</height>
+                <label>$INFO[Player.Time]</label>
+                <font>font16_body</font>
+                <textcolor>text_primary</textcolor>
+            </control>
+
+            <!-- Duration -->
+            <control type="label">
+                <right>27</right>
+                <top>15</top>
+                <width>200</width>
+                <height>25</height>
+                <align>right</align>
+                <label>$INFO[Player.Duration]</label>
+                <font>font16_body</font>
+                <textcolor>text_secondary</textcolor>
+            </control>
+
+            <!-- Seek Slider -->
+            <control type="slider" id="6">
+                <left>27</left>
+                <top>55</top>
+                <width>1866</width>
+                <height>20</height>
+                <texturesliderbar colordiffuse="bg_card">white.png</texturesliderbar>
+                <texturesliderbarfocus colordiffuse="bg_card">white.png</texturesliderbarfocus>
+                <textureslidernib colordiffuse="elite_accent">white.png</textureslidernib>
+                <textureslidernibfocus colordiffuse="elite_accent_light">white.png</textureslidernibfocus>
+            </control>
+
+            <!-- Now Playing Label -->
+            <control type="label">
+                <left>27</left>
+                <top>85</top>
+                <width>1200</width>
+                <height>25</height>
+                <label>$INFO[Player.Title]</label>
+                <font>font14_label</font>
+                <textcolor>text_muted</textcolor>
+            </control>
+        </control>
+    </controls>
+</window>

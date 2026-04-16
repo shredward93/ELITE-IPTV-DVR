@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="10109">
+    <defaultcontrol always="true">1</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Dark Overlay -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="bg_overlay">white.png</texture>
+        </control>
+
+        <!-- Numeric Dialog -->
+        <control type="group">
+            <centerleft>50%</centerleft>
+            <centertop>50%</centertop>
+            <width>400</width>
+            <height>500</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>400</width>
+                <height>500</height>
+                <texture colordiffuse="bg_panel" border="18">white.png</texture>
+            </control>
+
+            <!-- Title -->
+            <control type="label" id="1">
+                <left>20</left>
+                <top>15</top>
+                <width>360</width>
+                <height>30</height>
+                <font>font22_header</font>
+                <textcolor>elite_accent</textcolor>
+                <align>center</align>
+            </control>
+
+            <!-- Display -->
+            <control type="label" id="4">
+                <left>20</left>
+                <top>55</top>
+                <width>360</width>
+                <height>40</height>
+                <font>font28_title</font>
+                <textcolor>text_primary</textcolor>
+                <align>center</align>
+            </control>
+
+            <!-- Done -->
+            <control type="button" id="18">
+                <left>140</left>
+                <top>445</top>
+                <width>120</width>
+                <height>40</height>
+                <label>$LOCALIZE[186]</label>
+                <font>font14_accent</font>
+                <textcolor>text_primary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="20">white.png</texturefocus>
+                <texturenofocus colordiffuse="elite_accent_dark" border="20">white.png</texturenofocus>
+            </control>
+        </control>
+    </controls>
+</window>

@@ -26,6 +26,28 @@ _SUBPROCESS_FLAGS = {}
 if sys.platform == "win32":
     _SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
 
+
+def _build_instatunnel_env():
+    # GUI apps on macOS don't inherit the shell PATH, so Homebrew/npm binaries
+    # aren't found. Prepend common install locations.
+    env = os.environ.copy()
+    extra = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        os.path.expanduser("~/.local/bin"),
+        os.path.expanduser("~/bin"),
+    ]
+    env["PATH"] = ":".join(extra) + ":" + env.get("PATH", "")
+    npx = "npx.cmd" if sys.platform == "win32" else "npx"
+    return env, npx
+
+
+def _resolve_instatunnel_cli(npx):
+    cli = "instatunnel.cmd" if sys.platform == "win32" else "instatunnel"
+    if shutil.which(cli):
+        return [cli]
+    return [npx, "--yes", "instatunnel@latest"]
+
 # --- XSTREAM CREDENTIALS ---
 # Leave these blank — configure via the ⚙ Settings dialog (saved to credentials.json)
 SERVER_URL = ""
@@ -1312,21 +1334,10 @@ class IPTVRecorderApp(ctk.CTk):
         _ansi = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\r')
 
         def run_tunnel():
-            # GUI apps on macOS don't inherit the shell PATH, so Homebrew/npm
-            # binaries aren't found. Prepend common install locations.
-            env = os.environ.copy()
-            extra = [
-                "/opt/homebrew/bin",
-                "/usr/local/bin",
-                os.path.expanduser("~/.local/bin"),
-                os.path.expanduser("~/bin"),
-            ]
-            env["PATH"] = ":".join(extra) + ":" + env.get("PATH", "")
-
-            npx = "npx.cmd" if sys.platform == "win32" else "npx"
+            env, npx = _build_instatunnel_env()
 
             # Kill any stale session holding our subdomain before claiming it again.
-            kill_cmd = [npx, "--yes", "instatunnel", "--kill", INSTATUNNEL_SUBDOMAIN]
+            kill_cmd = _resolve_instatunnel_cli(npx) + ["--kill", INSTATUNNEL_SUBDOMAIN]
             if INSTATUNNEL_API_KEY:
                 kill_cmd += ["--api-key", INSTATUNNEL_API_KEY]
             try:
@@ -1337,7 +1348,7 @@ class IPTVRecorderApp(ctk.CTk):
                 pass  # kill is best-effort; proceed regardless
             time.sleep(1)
 
-            cmd = [npx, "--yes", "instatunnel", str(WEB_PORT), "-s", INSTATUNNEL_SUBDOMAIN]
+            cmd = _resolve_instatunnel_cli(npx) + ["connect", str(WEB_PORT), "--subdomain", INSTATUNNEL_SUBDOMAIN]
             if INSTATUNNEL_API_KEY:
                 cmd += ["--api-key", INSTATUNNEL_API_KEY]
             try:

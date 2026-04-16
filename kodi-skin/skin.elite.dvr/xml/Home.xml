@@ -204,7 +204,7 @@
             <bottom>20</bottom>
             <width>400</width>
             <height>20</height>
-            <label>ELITE IPTV DVR v1.0</label>
+            <label>ELITE IPTV DVR v1.0.2</label>
             <font>font10_small</font>
             <textcolor>text_muted</textcolor>
         </control>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.elite.dvr" version="1.0.0" name="ELITE IPTV DVR" provider-name="ELITE">
+<addon id="skin.elite.dvr" version="1.0.2" name="ELITE IPTV DVR" provider-name="ELITE">
     <requires>
-        <import addon="xbmc.gui" version="5.15.0"/>
+        <import addon="xbmc.gui" version="5.18.0"/>
     </requires>
     <extension point="xbmc.gui.skin" debugging="false">
         <res width="1920" height="1080" aspect="16:9" default="true" folder="xml" />

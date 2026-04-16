@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<window type="dialog" id="11111">
+<window type="dialog" id="10111">
     <defaultcontrol always="true">9000</defaultcontrol>
     <coordinates>
         <left>0</left>
@@ -188,7 +188,7 @@
                 <focusedcolor>text_primary</focusedcolor>
                 <texturefocus colordiffuse="bg_card_hover" border="22">pill_rounded.png</texturefocus>
                 <texturenofocus colordiffuse="bg_card" border="22">pill_rounded.png</texturefocus>
-                <onclick>Dialog.Close(11111)</onclick>
+                <onclick>Dialog.Close(10111)</onclick>
             </control>
             
         </control>

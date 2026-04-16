@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="10107">
+    <defaultcontrol>0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <animation effect="slide" start="0,-100" end="0,0" time="300" tween="cubic" easing="out">WindowOpen</animation>
+    <animation effect="slide" start="0,0" end="0,-100" time="300" tween="cubic" easing="in">WindowClose</animation>
+    <controls>
+        <!-- Toast Notification Bar -->
+        <control type="group">
+            <right>27</right>
+            <top>27</top>
+            <width>450</width>
+            <height>80</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>450</width>
+                <height>80</height>
+                <texture colordiffuse="bg_panel" border="12">white.png</texture>
+            </control>
+
+            <!-- Gold accent strip -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>4</width>
+                <height>80</height>
+                <texture colordiffuse="elite_accent">white.png</texture>
+            </control>
+
+            <!-- Icon -->
+            <control type="image" id="400">
+                <left>20</left>
+                <top>15</top>
+                <width>50</width>
+                <height>50</height>
+                <texture>$INFO[Window(10107).Property(icon)]</texture>
+            </control>
+
+            <!-- Title -->
+            <control type="label" id="401">
+                <left>85</left>
+                <top>15</top>
+                <width>345</width>
+                <height>25</height>
+                <font>font14_accent</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Message -->
+            <control type="label" id="402">
+                <left>85</left>
+                <top>42</top>
+                <width>345</width>
+                <height>25</height>
+                <font>font12_caption</font>
+                <textcolor>text_secondary</textcolor>
+            </control>
+        </control>
+    </controls>
+</window>

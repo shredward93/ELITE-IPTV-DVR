@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window id="12005">
+    <defaultcontrol always="true">0</defaultcontrol>
+    <allowoverlay>yes</allowoverlay>
+    <controls>
+        <!-- Video renders behind all controls automatically -->
+        <!-- This is intentionally minimal - video fills the screen -->
+    </controls>
+</window>

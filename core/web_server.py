@@ -21,7 +21,8 @@ import config
 
 # DVRManager imported for type hints only; no circular dependency risk.
 from core.dvr_manager import DVRManager
-from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg
+from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg, filter_guide_categories
+from core.recorder import job_duration_secs
 
 
 class WebContext:
@@ -108,10 +109,10 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 )
                 r = requests.get(url, timeout=8)
                 cats = r.json()
-                self._json([
+                self._json(filter_guide_categories([
                     {"category_id": c.get("category_id", ""), "category_name": c.get("category_name", "")}
                     for c in cats if c.get("category_name")
-                ])
+                ]))
             except Exception:
                 self._json([])
 
@@ -503,7 +504,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 if job.actual_start:
                     elapsed = int((now - job.actual_start).total_seconds())
                     entry["elapsed_secs"]   = elapsed
-                    entry["remaining_secs"] = max(0, job.duration_mins * 60 - elapsed)
+                    entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
                 if job.output_file:
                     entry["output_file"] = os.path.basename(job.output_file)
                 active.append(entry)
@@ -522,8 +523,33 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _serve_kodi_playlist(self, qs: dict):
         """Generate M3U playlist with proxy URLs for Kodi."""
+        trimmed_m3u = getattr(config, "TRIMMED_M3U_PATH", "").strip()
+        if trimmed_m3u and os.path.exists(trimmed_m3u):
+            try:
+                with open(trimmed_m3u, "rb") as f:
+                    data = f.read()
+                if data[:2] == b"\x1f\x8b":
+                    import gzip
+                    data = gzip.decompress(data)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+            except Exception as exc:
+                print(f"[Kodi] Failed to read trimmed M3U: {exc}; falling back to generated playlist")
+
         ip = self._local_ip()
         port = config.WEB_PORT
+
+        # Get optional category filter
+        category_id = qs.get("category_id", [""])[0].strip()
 
         # Get channels - try get_all_channels first, fall back to direct API fetch
         channels = []
@@ -533,6 +559,15 @@ class RemoteHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+        # If a category filter is requested, apply it to any cached channel list too.
+        if category_id and channels:
+            filtered = []
+            for ch in channels:
+                ch_category_id = str(ch.get("category_id", "") or "")
+                if ch_category_id == category_id:
+                    filtered.append(ch)
+            channels = filtered
+
         # If no channels from context, fetch directly from provider API
         if not channels:
             try:
@@ -541,6 +576,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
                     f"?username={config.USERNAME}&password={config.PASSWORD}"
                     f"&action=get_live_streams"
                 )
+                if category_id:
+                    url += f"&category_id={category_id}"
                 streams = requests.get(url, timeout=15).json()
                 channels = [
                     {
@@ -568,7 +605,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
             tvg_id = ch.get("epg_channel_id", ch_id)
 
             # tvg-name and group-title for Kodi PVR
-            lines.append(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{name}" group-title="Live TV"{f" tvg-logo=\"{icon}\"" if icon else ""},{name}')
+            icon_attr = f' tvg-logo="{icon}"' if icon else ""
+            lines.append(f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{name}" group-title="Live TV"{icon_attr},{name}')
 
             if dvr_mode:
                 # DVR HLS playlist URL
@@ -592,6 +630,28 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _serve_kodi_xmltv(self):
         """Serve cached XMLTV file for Kodi EPG."""
+        trimmed_xmltv = getattr(config, "TRIMMED_XMLTV_PATH", "").strip()
+        if trimmed_xmltv and os.path.exists(trimmed_xmltv):
+            try:
+                with open(trimmed_xmltv, "rb") as f:
+                    data = f.read()
+                if data[:2] == b"\x1f\x8b":
+                    import gzip
+                    data = gzip.decompress(data)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/xml")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+            except Exception as exc:
+                print(f"[Kodi] Failed to read trimmed XMLTV: {exc}; falling back to cached/remote XMLTV")
+
         # Try to return the cached XMLTV file directly
         cache_path = config.XMLTV_CACHE_PATH
 

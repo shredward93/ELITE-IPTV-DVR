@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="12002">
+    <defaultcontrol always="true">6</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Dark Overlay -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="bg_overlay">white.png</texture>
+        </control>
+
+        <!-- Dialog Panel -->
+        <control type="group">
+            <centerleft>50%</centerleft>
+            <centertop>50%</centertop>
+            <width>700</width>
+            <height>600</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>700</width>
+                <height>600</height>
+                <texture colordiffuse="bg_panel" border="18">white.png</texture>
+            </control>
+
+            <!-- Title -->
+            <control type="label" id="1">
+                <left>30</left>
+                <top>20</top>
+                <width>640</width>
+                <height>35</height>
+                <font>font22_header</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Selection List -->
+            <control type="list" id="6">
+                <left>20</left>
+                <top>70</top>
+                <width>660</width>
+                <height>460</height>
+                <onup>6</onup>
+                <ondown>6</ondown>
+                <onleft>6</onleft>
+                <onright>6</onright>
+                <scrolltime>200</scrolltime>
+                <itemlayout width="660" height="50">
+                    <control type="label">
+                        <left>15</left>
+                        <top>0</top>
+                        <width>630</width>
+                        <height>50</height>
+                        <label>$INFO[ListItem.Label]</label>
+                        <font>font14_label</font>
+                        <textcolor>text_secondary</textcolor>
+                    </control>
+                </itemlayout>
+                <focusedlayout width="660" height="50">
+                    <control type="image">
+                        <left>0</left>
+                        <top>2</top>
+                        <width>660</width>
+                        <height>46</height>
+                        <texture colordiffuse="elite_accent" border="8">white.png</texture>
+                    </control>
+                    <control type="label">
+                        <left>15</left>
+                        <top>0</top>
+                        <width>630</width>
+                        <height>50</height>
+                        <label>$INFO[ListItem.Label]</label>
+                        <font>font14_accent</font>
+                        <textcolor>text_primary</textcolor>
+                    </control>
+                </focusedlayout>
+            </control>
+
+            <!-- Close Button -->
+            <control type="button" id="7">
+                <left>280</left>
+                <top>545</top>
+                <width>140</width>
+                <height>40</height>
+                <label>$LOCALIZE[222]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="20">white.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="20">white.png</texturenofocus>
+                <onup>6</onup>
+            </control>
+        </control>
+    </controls>
+</window>

@@ -1,7 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <fonts>
     <fontset id="default" unicode="true">
-        <!-- ELITE IPTV DVR Typography -->
+        <!-- ========================================
+             Standard Kodi Font Names (REQUIRED)
+             Kodi's internal C++ code references these
+             by name. Missing them = crash/fallback.
+             ======================================== -->
+        <font>
+            <name>font10</name>
+            <filename>arial.ttf</filename>
+            <size>10</size>
+        </font>
+        <font>
+            <name>font12</name>
+            <filename>arial.ttf</filename>
+            <size>12</size>
+        </font>
+        <font>
+            <name>font13</name>
+            <filename>arial.ttf</filename>
+            <size>13</size>
+        </font>
+        <font>
+            <name>font13_title</name>
+            <filename>arial.ttf</filename>
+            <size>13</size>
+            <style>bold</style>
+        </font>
+        <font>
+            <name>font14</name>
+            <filename>arial.ttf</filename>
+            <size>14</size>
+        </font>
+        <font>
+            <name>font16</name>
+            <filename>arial.ttf</filename>
+            <size>16</size>
+        </font>
+        <font>
+            <name>font20</name>
+            <filename>arial.ttf</filename>
+            <size>20</size>
+        </font>
+        <font>
+            <name>font24</name>
+            <filename>arial.ttf</filename>
+            <size>24</size>
+        </font>
+        <font>
+            <name>font24_title</name>
+            <filename>arial.ttf</filename>
+            <size>24</size>
+            <style>bold</style>
+        </font>
+        <font>
+            <name>font28</name>
+            <filename>arial.ttf</filename>
+            <size>28</size>
+        </font>
+        <font>
+            <name>font30</name>
+            <filename>arial.ttf</filename>
+            <size>30</size>
+        </font>
+        <font>
+            <name>font_fallback</name>
+            <filename>arial.ttf</filename>
+            <size>13</size>
+        </font>
+        <font>
+            <name>WeatherTemp</name>
+            <filename>arial.ttf</filename>
+            <size>28</size>
+        </font>
+
+        <!-- ========================================
+             ELITE IPTV DVR Custom Typography
+             ======================================== -->
         
         <!-- Display/Title Fonts -->
         <font>

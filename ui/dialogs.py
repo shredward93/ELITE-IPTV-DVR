@@ -10,12 +10,14 @@ import json
 import os
 import sys
 import webbrowser
+import tkinter as tk
 
 import customtkinter as ctk
 import tkinter.filedialog as fd
 
 import config
 from core.credentials import save_credentials
+from core.startup import is_autostart_enabled, sync_autostart_setting
 
 
 # ── First-run setup wizard ─────────────────────────────────────────────────────
@@ -209,6 +211,7 @@ class SetupWizard(ctk.CTkToplevel):
             server_url=self._url.get().strip().rstrip("/"),
             username=self._user.get().strip(),
             password=self._pass.get().strip(),
+            tunnel_provider="instatunnel" if self._tunnel_sub.get().strip() else "",
             api_key=self._tunnel_key.get().strip(),
             subdomain=self._tunnel_sub.get().strip(),
         )
@@ -221,7 +224,7 @@ class CredentialsDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self._on_save = on_save
         self.title("Account Settings")
-        self.geometry("440x880")
+        self.geometry("440x960")
         self.resizable(False, True)
         self.grab_set()
         self.lift()
@@ -253,30 +256,141 @@ class CredentialsDialog(ctk.CTkToplevel):
 
         ctk.CTkFrame(self, height=1, fg_color="#484949").pack(fill="x", padx=28, pady=(8, 12))
 
-        ctk.CTkLabel(self, text="InstaTunnel  (Remote Access)",
+        ctk.CTkLabel(self, text="Startup",
+                     font=("Arial", 14, "bold"), anchor="w").pack(fill="x", padx=28, pady=(0, 6))
+
+        sf = ctk.CTkFrame(self, fg_color="transparent")
+        sf.pack(fill="x", padx=28)
+
+        self._autostart_var = tk.BooleanVar(value=is_autostart_enabled())
+        self._autostart_msg = ctk.CTkLabel(sf, text="", text_color="gray40", font=("Arial", 10), anchor="w")
+        self._autostart_msg.pack(fill="x", pady=(0, 4))
+        self._autostart_chk = ctk.CTkCheckBox(
+            sf,
+            text="Start when computer turns on",
+            variable=self._autostart_var,
+            command=self._save_autostart,
+        )
+        self._autostart_chk.pack(fill="x", pady=(0, 8))
+        self._autostart_msg.configure(
+            text="Enabled in Windows Startup" if self._autostart_var.get() else "Disabled",
+        )
+
+        ctk.CTkFrame(self, height=1, fg_color="#484949").pack(fill="x", padx=28, pady=(8, 12))
+
+        ctk.CTkLabel(self, text="Remote Access  (Tunnel)",
                      font=("Arial", 14, "bold"), anchor="w").pack(fill="x", padx=28, pady=(0, 6))
 
         tf = ctk.CTkFrame(self, fg_color="transparent")
         tf.pack(fill="x", padx=28)
 
-        ctk.CTkButton(tf, text="instatunnel.my  — create a free account →",
+        # Tunnel Provider Selector
+        ctk.CTkLabel(tf, text="Provider", anchor="w").pack(fill="x")
+        self._tunnel_provider = ctk.CTkComboBox(
+            tf,
+            values=["None", "Cloudflare Tunnel", "InstaTunnel"],
+            command=self._on_tunnel_provider_change,
+        )
+        self._tunnel_provider.pack(fill="x", pady=(0, 10))
+        
+        # Set default based on config
+        default_provider = config.TUNNEL_PROVIDER
+        if not default_provider:
+            default_provider = "None"
+        elif default_provider == "cloudflare":
+            default_provider = "Cloudflare Tunnel"
+        elif default_provider == "instatunnel":
+            default_provider = "InstaTunnel"
+        self._tunnel_provider.set(default_provider)
+
+        # ── Cloudflare Panel ──
+        self._cf_frame = ctk.CTkFrame(tf, fg_color="transparent")
+        
+        ctk.CTkButton(self._cf_frame, text="Download cloudflared →",
+                      fg_color="#484949", hover_color="#575959", height=28,
+                      command=lambda: webbrowser.open("https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/")
+                      ).pack(fill="x", pady=(0, 6))
+        
+        info = ctk.CTkFrame(self._cf_frame, fg_color="#2E2F2F", corner_radius=8)
+        info.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(info,
+                     text="Cloudflare Tunnel is free with no expiry.\n"
+                          "Quick Tunnels: random URL each launch (no setup).\n"
+                          "Named Tunnels: use your own domain (requires Cloudflare setup).",
+                     text_color="gray55", font=("Arial", 10), justify="left", anchor="w",
+                     ).pack(fill="x", padx=10, pady=8)
+
+        ctk.CTkLabel(self._cf_frame, text="Domain  (optional — leave blank for Quick Tunnel)", anchor="w").pack(fill="x")
+        self._cf_domain = ctk.CTkEntry(self._cf_frame, placeholder_text="e.g. iptv.yourdomain.com")
+        self._cf_domain.pack(fill="x", pady=(0, 10))
+        self._cf_domain.insert(0, config.CLOUDFLARE_DOMAIN)
+
+        ctk.CTkLabel(self._cf_frame, text="Tunnel Token  (only needed for named tunnels)", anchor="w").pack(fill="x")
+        self._cf_token = ctk.CTkEntry(self._cf_frame, placeholder_text="eyJ...")
+        self._cf_token.pack(fill="x", pady=(0, 6))
+        self._cf_token.insert(0, config.CLOUDFLARE_TUNNEL_TOKEN)
+
+        ctk.CTkLabel(self._cf_frame, text="Cloudflare Tunnel never expires. URL is stable for named tunnels.",
+                     text_color="gray40", font=("Arial", 10), anchor="w").pack(fill="x", pady=(0, 10))
+
+        # ── InstaTunnel Panel ──
+        self._it_frame = ctk.CTkFrame(tf, fg_color="transparent")
+        
+        ctk.CTkButton(self._it_frame, text="instatunnel.my  — create free account →",
                       fg_color="#484949", hover_color="#575959", height=28,
                       command=lambda: webbrowser.open("https://instatunnel.my")
                       ).pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(tf,
-                     text=f"Log in → Dashboard → copy your API Key  (app uses port {config.WEB_PORT})",
+        ctk.CTkLabel(self._it_frame,
+                     text=f"Log in → Dashboard → copy API Key  (app uses port {config.WEB_PORT})",
                      text_color="gray50", font=("Arial", 10), anchor="w"
                      ).pack(fill="x", pady=(0, 10))
 
-        ctk.CTkLabel(tf, text="API Key", anchor="w").pack(fill="x")
-        self._tunnel_key = ctk.CTkEntry(tf, placeholder_text="it_…")
+        ctk.CTkLabel(self._it_frame, text="API Key", anchor="w").pack(fill="x")
+        self._tunnel_key = ctk.CTkEntry(self._it_frame, placeholder_text="it_…")
         self._tunnel_key.pack(fill="x", pady=(0, 10))
         self._tunnel_key.insert(0, config.INSTATUNNEL_API_KEY)
 
-        ctk.CTkLabel(tf, text="Subdomain  (becomes https://<subdomain>.instatunnel.my)", anchor="w").pack(fill="x")
-        self._tunnel_sub = ctk.CTkEntry(tf, placeholder_text="e.g. johns-iptv")
+        ctk.CTkLabel(self._it_frame, text="Subdomain  (becomes https://<subdomain>.instatunnel.my)", anchor="w").pack(fill="x")
+        self._tunnel_sub = ctk.CTkEntry(self._it_frame, placeholder_text="e.g. johns-iptv")
         self._tunnel_sub.pack(fill="x", pady=(0, 6))
         self._tunnel_sub.insert(0, config.INSTATUNNEL_SUBDOMAIN)
+        self._tunnel_sub.bind("<KeyRelease>", lambda e: self._refresh_tunnel_url())
+
+        ctk.CTkLabel(self._it_frame, text="Tunnel URL", anchor="w").pack(fill="x", pady=(4, 0))
+        tunnel_row = ctk.CTkFrame(self._it_frame, fg_color="transparent")
+        tunnel_row.pack(fill="x", pady=(0, 6))
+        self._tunnel_url_lbl = ctk.CTkLabel(
+            tunnel_row,
+            text="",
+            text_color="#3498db",
+            font=("Arial", 11),
+            anchor="w",
+            cursor="hand2",
+        )
+        self._tunnel_url_lbl.pack(side="left", fill="x", expand=True)
+        self._tunnel_url_lbl.bind("<Button-1>", lambda e: self._open_tunnel_url())
+        self._tunnel_url_copy = ctk.CTkButton(
+            tunnel_row,
+            text="Copy URL",
+            width=84,
+            height=24,
+            fg_color="#575959",
+            hover_color="#484949",
+            command=self._copy_tunnel_url,
+        )
+        self._tunnel_url_copy.pack(side="right", padx=(8, 0))
+
+        ctk.CTkLabel(
+            self._it_frame,
+            text="Free InstaTunnel expires after 24 hours.",
+            text_color="#e74c3c",
+            font=("Arial", 10),
+            anchor="w",
+        ).pack(fill="x", pady=(0, 10))
+        self._refresh_tunnel_url()
+
+        # Show correct panel initially
+        self._update_tunnel_panels()
 
         ctk.CTkLabel(tf, text="Tunnel changes take effect on next app launch.",
                      text_color="gray40", font=("Arial", 10), anchor="w").pack(fill="x", pady=(0, 12))
@@ -336,27 +450,102 @@ class CredentialsDialog(ctk.CTkToplevel):
                       fg_color="#575959", hover_color="#484949",
                       command=self.destroy).pack(fill="x", expand=True)
 
+    def _on_tunnel_provider_change(self, choice):
+        self._update_tunnel_panels()
+
+    def _update_tunnel_panels(self):
+        choice = self._tunnel_provider.get()
+        if choice == "Cloudflare Tunnel":
+            self._cf_frame.pack(fill="x", pady=(0, 10))
+            self._it_frame.pack_forget()
+        elif choice == "InstaTunnel":
+            self._cf_frame.pack_forget()
+            self._it_frame.pack(fill="x", pady=(0, 10))
+        else:  # None
+            self._cf_frame.pack_forget()
+            self._it_frame.pack_forget()
+
+    def _get_tunnel_provider_value(self):
+        choice = self._tunnel_provider.get()
+        if choice == "Cloudflare Tunnel":
+            return "cloudflare"
+        elif choice == "InstaTunnel":
+            return "instatunnel"
+        return ""
+
     def _save_xtream(self):
         save_credentials(
             server_url=self._url.get().strip().rstrip("/"),
             username=self._user.get().strip(),
             password=self._pass.get().strip(),
+            tunnel_provider=self._get_tunnel_provider_value(),
             api_key=self._tunnel_key.get().strip(),
             subdomain=self._tunnel_sub.get().strip(),
+            cloudflare_token=self._cf_token.get().strip(),
+            cloudflare_domain=self._cf_domain.get().strip(),
         )
         self.destroy()
         self._on_save()
 
     def _save_tunnel(self):
+        tunnel_mgr = getattr(self.master, "tunnel_mgr", None)
+        if tunnel_mgr is not None:
+            try:
+                tunnel_mgr.stop()
+            except Exception:
+                pass
         save_credentials(
             server_url=self._url.get().strip().rstrip("/"),
             username=self._user.get().strip(),
             password=self._pass.get().strip(),
+            tunnel_provider=self._get_tunnel_provider_value(),
             api_key=self._tunnel_key.get().strip(),
             subdomain=self._tunnel_sub.get().strip(),
+            cloudflare_token=self._cf_token.get().strip(),
+            cloudflare_domain=self._cf_domain.get().strip(),
         )
         self.destroy()
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        if getattr(sys, "frozen", False):
+            os.execv(sys.executable, [sys.executable] + sys.argv[1:])
+        else:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def _configured_tunnel_url(self):
+        choice = self._tunnel_provider.get()
+        if choice == "Cloudflare Tunnel":
+            domain = self._cf_domain.get().strip()
+            if domain:
+                return f"https://{domain}"
+            return "(Quick Tunnel — URL assigned at runtime)"
+        elif choice == "InstaTunnel":
+            subdomain = self._tunnel_sub.get().strip()
+            if not subdomain:
+                return ""
+            return f"https://{subdomain}.instatunnel.my"
+        return ""
+
+    def _refresh_tunnel_url(self):
+        tunnel_url = self._configured_tunnel_url()
+        if tunnel_url:
+            self._tunnel_url_lbl.configure(text=tunnel_url, text_color="#3498db")
+            self._tunnel_url_copy.configure(state="normal")
+        else:
+            self._tunnel_url_lbl.configure(text="https://<subdomain>.instatunnel.my", text_color="gray40")
+            self._tunnel_url_copy.configure(state="disabled")
+
+    def _open_tunnel_url(self):
+        tunnel_url = self._configured_tunnel_url()
+        if tunnel_url:
+            webbrowser.open(tunnel_url)
+
+    def _copy_tunnel_url(self):
+        tunnel_url = self._configured_tunnel_url()
+        if tunnel_url:
+            self.clipboard_clear()
+            self.clipboard_append(tunnel_url)
+            self.update()
+            self._tunnel_url_copy.configure(text="Copied!", fg_color="#1a6b3a")
+            self.after(2000, lambda: self._tunnel_url_copy.configure(text="Copy URL", fg_color="#575959"))
 
     def _pick_dvr_dir(self):
         path = fd.askdirectory(initialdir=self._dvr_dir.get() or config.DVR_BUFFER_DIR)
@@ -395,3 +584,17 @@ class CredentialsDialog(ctk.CTkToplevel):
             self._dvr_msg.configure(text="DVR settings saved.", text_color="#2ecc71")
         except Exception as e:
             self._dvr_msg.configure(text=f"Could not save: {e}", text_color="#e74c3c")
+
+    def _save_autostart(self):
+        enabled = bool(self._autostart_var.get())
+        if sync_autostart_setting(enabled):
+            self._autostart_msg.configure(
+                text="Enabled in Windows Startup" if enabled else "Disabled",
+                text_color="#2ecc71" if enabled else "gray40",
+            )
+        else:
+            self._autostart_var.set(False)
+            self._autostart_msg.configure(
+                text="Could not update Windows Startup.",
+                text_color="#e74c3c",
+            )

@@ -31,10 +31,41 @@ import config
 
 _NORM_RE = re.compile(r"[^a-z0-9]")
 
+_GUIDE_CATEGORY_MATCHES = (
+    "usa",
+    "u s a",
+    "united states",
+    "sports",
+    "sport",
+    "us networks",
+    "us network",
+    "english",
+)
+
 
 def _norm(value: str) -> str:
     """Lower-case, strip non-alphanumeric — used for fuzzy name matching."""
     return _NORM_RE.sub("", str(value).lower())
+
+
+def _normalize_guide_category_name(value: str) -> str:
+    return str(value or "").lower().replace("_", " ").replace("-", " ")
+
+
+def _is_guide_category_allowed(category_name: str) -> bool:
+    normalized = _normalize_guide_category_name(category_name)
+    if not normalized.strip():
+        return False
+    return any(token in normalized for token in _GUIDE_CATEGORY_MATCHES)
+
+
+def filter_guide_categories(categories: list) -> list:
+    """Apply the Kodi/webapp guide allowlist without changing the rest of the guide flow.
+
+    This keeps the current Kodi guide behavior intact apart from category visibility,
+    so reverting is as simple as removing this filter call.
+    """
+    return [c for c in categories if _is_guide_category_allowed(c.get("category_name", ""))]
 
 
 def _decode(text) -> str:
@@ -125,16 +156,34 @@ class _XmltvStore:
 
     def _fetch_raw(self, server_url: str, username: str, password: str) -> bytes:
         cache_path = config.XMLTV_CACHE_PATH
+        trimmed_path = config.TRIMMED_XMLTV_PATH
+
+        if trimmed_path and os.path.exists(trimmed_path):
+            try:
+                print(f"[EPG] Using trimmed XMLTV file from disk: {trimmed_path}")
+                with open(trimmed_path, "rb") as fh:
+                    raw = fh.read()
+                if raw[:2] == b"\x1f\x8b":
+                    raw = gzip.decompress(raw)
+                return raw
+            except Exception as exc:
+                print(f"[EPG] Failed to read trimmed XMLTV file ({exc}); falling back to remote source")
+
         url = (
             config.XMLTV_SOURCE_URL.strip()
+            or config.XMLTV_SOURCE_PATH.strip()
             or f"{server_url}/xmltv.php?username={username}&password={password}"
         )
 
         print(f"[EPG] Downloading XMLTV from {url[:60]}…")
         try:
-            r = requests.get(url, timeout=60, stream=True)
-            r.raise_for_status()
-            raw = r.content
+            if config.XMLTV_SOURCE_PATH.strip():
+                with open(config.XMLTV_SOURCE_PATH.strip(), "rb") as fh:
+                    raw = fh.read()
+            else:
+                r = requests.get(url, timeout=60, stream=True)
+                r.raise_for_status()
+                raw = r.content
         except Exception as exc:
             print(f"[EPG] XMLTV download failed ({exc}); trying disk cache")
             raw = None
@@ -250,11 +299,11 @@ def _fetch_categories(server_url, username, password):
            f"?username={username}&password={password}&action=get_live_categories")
     try:
         cats = requests.get(url, timeout=8).json()
-        return [
+        return filter_guide_categories([
             {"category_id": str(c.get("category_id", "")),
              "category_name": c.get("category_name", "")}
             for c in cats if c.get("category_name")
-        ]
+        ])
     except Exception as exc:
         print(f"[EPG] fetch_categories failed: {exc}")
         return []

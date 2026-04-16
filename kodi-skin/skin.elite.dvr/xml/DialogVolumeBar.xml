@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="12900">
+    <defaultcontrol>0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <animation effect="fade" start="0" end="100" time="200">WindowOpen</animation>
+    <animation effect="fade" start="100" end="0" time="200">WindowClose</animation>
+    <controls>
+        <!-- Volume Bar -->
+        <control type="group">
+            <centerleft>50%</centerleft>
+            <bottom>80</bottom>
+            <width>400</width>
+            <height>60</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>400</width>
+                <height>60</height>
+                <texture colordiffuse="bg_panel" border="12">white.png</texture>
+            </control>
+
+            <!-- Volume Label -->
+            <control type="label">
+                <left>15</left>
+                <top>5</top>
+                <width>100</width>
+                <height>20</height>
+                <label>$LOCALIZE[13376]</label>
+                <font>font12_caption</font>
+                <textcolor>text_secondary</textcolor>
+            </control>
+
+            <!-- Volume Percentage -->
+            <control type="label">
+                <right>15</right>
+                <top>5</top>
+                <width>80</width>
+                <height>20</height>
+                <align>right</align>
+                <label>$INFO[Player.Volume]</label>
+                <font>font12_accent</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Volume Slider -->
+            <control type="slider" id="1">
+                <left>15</left>
+                <top>32</top>
+                <width>370</width>
+                <height>16</height>
+                <texturesliderbar colordiffuse="bg_card">white.png</texturesliderbar>
+                <texturesliderbarfocus colordiffuse="bg_card">white.png</texturesliderbarfocus>
+                <textureslidernib colordiffuse="elite_accent">white.png</textureslidernib>
+                <textureslidernibfocus colordiffuse="elite_accent">white.png</textureslidernibfocus>
+            </control>
+        </control>
+    </controls>
+</window>

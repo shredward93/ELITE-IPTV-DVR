@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="10049">
+    <defaultcontrol>0</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Extended Progress (bottom notification bar) -->
+        <control type="group">
+            <left>0</left>
+            <bottom>0</bottom>
+            <width>1920</width>
+            <height>60</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>1920</width>
+                <height>60</height>
+                <texture colordiffuse="bg_panel">white.png</texture>
+            </control>
+
+            <!-- Title -->
+            <control type="label" id="1">
+                <left>27</left>
+                <top>5</top>
+                <width>600</width>
+                <height>22</height>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+            </control>
+
+            <!-- Progress Bar -->
+            <control type="progress" id="20">
+                <left>27</left>
+                <top>35</top>
+                <width>1866</width>
+                <height>8</height>
+                <texturebg colordiffuse="bg_card">white.png</texturebg>
+                <lefttexture>-</lefttexture>
+                <midtexture colordiffuse="elite_accent">white.png</midtexture>
+                <righttexture>-</righttexture>
+            </control>
+        </control>
+    </controls>
+</window>

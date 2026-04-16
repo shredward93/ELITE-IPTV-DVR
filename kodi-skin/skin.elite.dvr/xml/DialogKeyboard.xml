@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window type="dialog" id="10103">
+    <defaultcontrol always="true">60</defaultcontrol>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+    </coordinates>
+    <controls>
+        <!-- Dark Overlay -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>1920</width>
+            <height>1080</height>
+            <texture colordiffuse="bg_overlay">white.png</texture>
+        </control>
+
+        <!-- Keyboard Panel -->
+        <control type="group">
+            <centerleft>50%</centerleft>
+            <centertop>50%</centertop>
+            <width>1000</width>
+            <height>550</height>
+
+            <!-- Background -->
+            <control type="image">
+                <left>0</left>
+                <top>0</top>
+                <width>1000</width>
+                <height>550</height>
+                <texture colordiffuse="bg_panel" border="18">white.png</texture>
+            </control>
+
+            <!-- Title -->
+            <control type="label" id="311">
+                <left>30</left>
+                <top>15</top>
+                <width>940</width>
+                <height>30</height>
+                <font>font22_header</font>
+                <textcolor>elite_accent</textcolor>
+            </control>
+
+            <!-- Input Field -->
+            <control type="edit" id="312">
+                <left>30</left>
+                <top>55</top>
+                <width>940</width>
+                <height>40</height>
+                <font>font16_body</font>
+                <textcolor>text_primary</textcolor>
+                <texturefocus colordiffuse="bg_card" border="4">white.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="4">white.png</texturenofocus>
+            </control>
+
+            <!-- Keyboard buttons - Kodi auto-populates these -->
+            <control type="button" id="60">
+                <left>30</left>
+                <top>110</top>
+                <width>940</width>
+                <height>380</height>
+                <font>font16_body</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="6">white.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="6">white.png</texturenofocus>
+            </control>
+
+            <!-- Done button -->
+            <control type="button" id="300">
+                <left>730</left>
+                <top>500</top>
+                <width>120</width>
+                <height>36</height>
+                <label>$LOCALIZE[186]</label>
+                <font>font14_accent</font>
+                <textcolor>text_primary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="elite_accent" border="18">white.png</texturefocus>
+                <texturenofocus colordiffuse="elite_accent_dark" border="18">white.png</texturenofocus>
+                <onup>60</onup>
+            </control>
+
+            <!-- Cancel button -->
+            <control type="button" id="301">
+                <left>860</left>
+                <top>500</top>
+                <width>120</width>
+                <height>36</height>
+                <label>$LOCALIZE[222]</label>
+                <font>font14_label</font>
+                <textcolor>text_secondary</textcolor>
+                <focusedcolor>text_primary</focusedcolor>
+                <texturefocus colordiffuse="bg_card_hover" border="18">white.png</texturefocus>
+                <texturenofocus colordiffuse="bg_card" border="18">white.png</texturenofocus>
+                <onup>60</onup>
+            </control>
+        </control>
+    </controls>
+</window>

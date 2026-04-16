@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import customtkinter as ctk
 import tkinter.messagebox as mb
@@ -88,17 +89,34 @@ def _check_ffmpeg() -> bool:
     return False
 
 
-if __name__ == "__main__":
+def _run_app_once() -> int:
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme(os.path.join(config._BUNDLE_DIR, "ember.json"))
 
     load_credentials()
 
     if not _check_ffmpeg():
-        sys.exit(0)
+        return 0
 
     from ui.app import IPTVRecorderApp
 
     app = IPTVRecorderApp()
     app.protocol("WM_DELETE_WINDOW", app._on_closing)
     app.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    if "--run-app" in sys.argv:
+        sys.exit(_run_app_once())
+
+    while True:
+        child_args = [sys.executable]
+        if getattr(sys, "frozen", False):
+            child_args.append("--run-app")
+        else:
+            child_args.extend([os.path.abspath(__file__), "--run-app"])
+        result = subprocess.run(child_args)
+        if result.returncode == 0:
+            sys.exit(0)
+        time.sleep(3)

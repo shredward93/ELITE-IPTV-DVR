@@ -1,0 +1,17 @@
+GitHub Update Test File
+========================
+
+Created: April 17, 2026
+Purpose: Verify git pull is working from NAS
+
+If you can see this file on your NAS at:
+  /volume1/docker/eliteiptvdvr/github update worked.txt
+
+Then the GitHub → NAS sync is working correctly!
+
+Next steps:
+1. Push this file to GitHub (1 - Push to GitHub.bat)
+2. Run Task Scheduler task on NAS
+3. Check if this file appears in File Station
+
+If successful, your code deployment workflow is ready!

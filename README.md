@@ -8,7 +8,7 @@ The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favor
 
 - **Live Guide & EPG Fetching:** Fetches and parses your provider's channel list and EPG data for scheduling reference.
 - **Mobile Web Remote:** Built-in lightweight HTTP server on port 8080 for search, scheduling, favorites, and active job control.
-- **InstaTunnel Remote Access:** Optional public tunnel for controlling recordings outside your local network.
+- **Cloudflare Tunnel Remote Access:** Optional public tunnel for controlling recordings outside your local network. Supports both quick tunnels (temporary URL) and named tunnels with your own custom domain.
 - **Resilient Recording & Backup Channels:** Uses FFmpeg reconnect flags and supports a backup channel if the primary stream fails.
 - **Kodi-first TV workflow:** Native Kodi add-ons and the ELITE skin are the primary couch interface for guide browsing and recording.
 - **Setup Wizard & Settings:** First-run onboarding to save XtreamCodes credentials and tunnel configurations.
@@ -26,7 +26,7 @@ The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favor
   - *Windows:* The app can offer to install this via `winget` on first launch.
   - *macOS:* `brew install ffmpeg`
   - *Linux:* `sudo apt install ffmpeg`
-- **Node.js (optional):** Only needed for InstaTunnel remote access.
+- **cloudflared (optional):** Only needed for Cloudflare Tunnel remote access. Download from [Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 - **Kodi:** Install Kodi on your TV device to use the ELITE skin and addon workflow.
 - **Storage:** Make sure your output directory has enough free space.
 
@@ -74,7 +74,7 @@ For Windows users, you can download the packaged release directly from the Relea
 ### Web Remote
 
 1. Ensure the app is running on your desktop.
-2. Use the status text at the bottom of the window to find your local remote URL or InstaTunnel public URL.
+2. Use the status text at the bottom of the window to find your local remote URL or Cloudflare Tunnel public URL.
 3. Open the URL on your phone or tablet.
 4. Search channels, view EPG, schedule jobs, or stop active recordings.
 
@@ -87,10 +87,98 @@ For Windows users, you can download the packaged release directly from the Relea
 ## Roadmap
 
 - **Kodi-first TV experience:** Finish the Kodi addon and ELITE skin integration so the TV UI becomes the primary couch workflow.
-- **Tunnel hardening:** Stabilize InstaTunnel startup, shutdown, and duplicate-subdomain recovery.
+- **NAS/Docker support:** Build containerized version for Synology, TrueNAS, and other NAS systems.
 - **Kodi setup polish:** Document SMB setup and the install flow for the Kodi skin/addon path.
 - **Web remote maintenance:** Keep the mobile remote API-compatible with backend changes.
 - **Backend cleanup:** Continue pruning unused legacy code and docs as the Kodi-first path matures.
+
+## Remote Access Setup (Cloudflare Tunnel)
+
+For access outside your home network, the app supports **Cloudflare Tunnel** (free, no account required for quick tunnels; custom domains need a free Cloudflare account).
+
+### Quick Tunnel (Easiest — No Domain Required)
+
+1. Download `cloudflared` for your OS from [Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+2. Place `cloudflared.exe` (Windows) next to the app, or put it in your PATH
+3. Open the app → **⚙ Settings** → **Remote Access**
+4. Set **Provider** to **"Cloudflare Tunnel"**
+5. Leave **Domain** and **Token** blank
+6. Click **Save & Relaunch**
+7. The app will launch a quick tunnel — a random `*.trycloudflare.com` URL will appear in the status bar
+
+Each restart gets a new random URL. Good for testing.
+
+### Named Tunnel with Custom Domain
+
+If you own a domain (purchased via Cloudflare or elsewhere), you can have a **persistent URL** that never changes.
+
+#### Step 1: Add Domain to Cloudflare (if not purchased there)
+
+If your domain is elsewhere (Wix, GoDaddy, etc.), point it to Cloudflare:
+
+1. Sign up at [Cloudflare](https://dash.cloudflare.com)
+2. Click **"Add Site"** → enter your domain
+3. Choose the **Free** plan
+4. Cloudflare scans your DNS — approve or add records as needed
+5. **Important:** Cloudflare gives you **two nameservers**
+6. Go to your domain registrar (Wix, GoDaddy, etc.) → change nameservers to Cloudflare's
+7. Wait for DNS propagation (usually minutes, up to 24 hours)
+
+#### Step 2: Create the Tunnel
+
+1. Go to [Cloudflare Zero Trust](https://one.dash.cloudflare.com) (Zero Trust dashboard)
+2. Navigate to **Networks** → **Tunnels**
+3. Click **"Create a tunnel"** → Select **"Cloudflare tunnel"**
+4. Name it: `elite-dvr` (or anything)
+5. Select **Windows** as environment
+6. Copy the command shown (contains a token starting with `eyJh...`)
+
+#### Step 3: Connect the Tunnel
+
+**Option A — Let the app manage it (recommended):**
+
+- Don't run the command yourself
+- Just copy the **token** part (`eyJh...`)
+- Proceed to Step 4
+
+**Option B — Install as Windows service:**
+
+- Open **Command Prompt as Administrator**
+- `cd` to where you put `cloudflared.exe`
+- Paste and run the full command from Step 2
+- This runs cloudflared as a background service
+
+#### Step 4: Configure Public Hostname
+
+On the tunnel page in Cloudflare dashboard:
+
+1. Click **"Add a public hostname"**
+2. **Subdomain:** `iptv` (or `dvr`, `live`, etc.)
+3. **Domain:** Select your domain from dropdown
+4. **Type:** `HTTP`
+5. **URL:** `localhost:8080` (or whatever port your app uses)
+6. Click **"Save hostname"**
+
+#### Step 5: Configure the App
+
+1. Open **ELITE IPTV DVR**
+2. Click **⚙ Settings**
+3. Under **"Remote Access (Tunnel)"**:
+   - **Provider:** `Cloudflare Tunnel`
+   - **Domain:** Your full domain (e.g., `iptv.yourdomain.com`)
+   - **Tunnel Token:** The `eyJh...` token from Step 2 (if using Option A above)
+4. Click **"Save & Relaunch App"**
+
+After restart, the status bar shows your tunnel URL in blue. Click **Copy** → open on your phone to test.
+
+### Troubleshooting
+
+| Issue | Solution |
+|----------|----------|
+| "cloudflared not found" | Place `cloudflared.exe` next to the app, or add to PATH |
+| "Tunnel: not configured" | Check domain and token are saved correctly |
+| Can't connect from outside | Check Windows Firewall isn't blocking port 8080; verify hostname is saved in Cloudflare dashboard |
+| Domain doesn't resolve | Wait for DNS propagation; check at [DNS Checker](https://dnschecker.org/) |
 
 ## Disclaimer
 

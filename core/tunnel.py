@@ -127,17 +127,32 @@ class TunnelManager:
         return True
 
     def _find_cloudflared(self):
-        """Find cloudflared binary in PATH or common locations."""
-        binary = "cloudflared.exe" if sys.platform == "win32" else "cloudflared"
+        """Find cloudflared binary in PATH, app directory, or common locations."""
+        # Windows variants
+        if sys.platform == "win32":
+            variants = ["cloudflared.exe", "cloudflared-windows-amd64.exe", "cloudflared-windows-386.exe"]
+        else:
+            variants = ["cloudflared"]
         
-        # Check PATH
-        if shutil.which(binary):
-            return shutil.which(binary)
+        # Check PATH for any variant
+        for binary in variants:
+            path = shutil.which(binary)
+            if path:
+                return path
         
-        # Check common locations
+        # Check app directory (where the script/exe is running from)
+        app_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for variant in variants:
+            for check_dir in [app_dir, os.path.dirname(app_dir)]:
+                path = os.path.join(check_dir, variant)
+                if os.path.isfile(path):
+                    return path
+        
+        # Check common system locations
         common_paths = [
             os.path.expanduser("~/bin/cloudflared"),
             os.path.expanduser("~/.local/bin/cloudflared"),
+            os.path.expanduser("~/bin/cloudflared.exe"),
             "/usr/local/bin/cloudflared",
             "/opt/homebrew/bin/cloudflared",
             "C:\\Program Files\\Cloudflare\\cloudflared.exe",

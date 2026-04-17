@@ -1,0 +1,73 @@
+# ELITE IPTV DVR - Docker Compose
+# For NAS deployment with optional Cloudflare Tunnel
+
+version: '3.8'
+
+services:
+  elite-dvr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: elite-iptv-dvr:latest
+    container_name: elite-dvr
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    volumes:
+      # Recordings storage - adjust path to your NAS share
+      - ${RECORDINGS_PATH:-./recordings}:/recordings
+      # Persistent data (credentials, favorites, scheduled jobs)
+      - ${DATA_PATH:-./data}:/app/data
+      # Logs
+      - ${LOGS_PATH:-./logs}:/app/logs
+    environment:
+      - WEB_PORT=${WEB_PORT:-8080}
+      - DVR_BUFFER_DIR=/recordings
+      - DVR_MAX_HOURS=${DVR_MAX_HOURS:-6}
+      - DVR_MAX_GB=${DVR_MAX_GB:-50}
+      # XtreamCodes credentials (loaded from credentials.json preferably)
+      - SERVER_URL=${SERVER_URL:-}
+      - USERNAME=${USERNAME:-}
+      - PASSWORD=${PASSWORD:-}
+      # Cloudflare Tunnel (named tunnel mode)
+      - TUNNEL_PROVIDER=${TUNNEL_PROVIDER:-}
+      - CLOUDFLARE_DOMAIN=${CLOUDFLARE_DOMAIN:-}
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - elite-network
+
+  # Cloudflare Tunnel sidecar (optional - for public access)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: elite-dvr-tunnel
+    restart: unless-stopped
+    # Only run if TUNNEL_TOKEN is provided
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    # No ports exposed - tunnel connects outbound
+    networks:
+      - elite-network
+    profiles:
+      - tunnel  # Only start when using: docker-compose --profile tunnel up
+
+  # Alternative: Quick Tunnel for testing (no token needed)
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    container_name: elite-dvr-quick-tunnel
+    restart: unless-stopped
+    command: tunnel --url http://elite-dvr:8080
+    networks:
+      - elite-network
+    profiles:
+      - quick-tunnel  # Use: docker-compose --profile quick-tunnel up
+
+networks:
+  elite-network:
+    driver: bridge

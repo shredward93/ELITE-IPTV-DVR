@@ -9,6 +9,11 @@
    - Pause/rewind live TV via DVR buffer
    - One-click recording to PC hard drive
    - Custom ELITE skin for consistent branding
+4. **NAS Deployment** — Headless Docker deployment for always-on server (Synology DS1621xs+)
+   - Stream multiplexing for multi-user efficiency
+   - Headless launcher (no GUI)
+   - Docker container support
+   - Environment variable configuration
 
 ---
 
@@ -37,6 +42,65 @@ iptv-recorder/
 - `core/` → zero tkinter/ctk imports, ever
 - `ui/` → never calls FFmpeg directly; reads job state, never writes it
 - `config.py` → no UI, no FFmpeg, no HTTP; just a dataclass + file I/O
+
+---
+
+## NAS Deployment (Synology DS1621xs+)
+
+**Target:** Synology DS1621xs+ NAS (quad-core Intel Xeon D-1527, 32GB DDR4 ECC, 10GbE, Docker/Container Manager support)
+
+**Goal:** Run the server headlessly on NAS for always-on operation, accessible remotely by all users (Edward, Kurt/Emmett, Dad). All recordings land on NAS storage and are accessible to all users simultaneously.
+
+### Components to Build
+
+| Component | Priority | Status |
+|-----------|----------|--------|
+| `StreamMuxer` — Multi-user stream sharing | High | Not built |
+| `server_headless.py` — GUI-less entrypoint | High | Not built |
+| `Dockerfile` — Linux container recipe | High | Not built |
+| Environment variable credentials | Medium | Not built |
+| HTTP recordings browser for Kodi | Medium | Not built |
+| First-run web setup page | Medium | Not built |
+
+### Headless Launcher (`server_headless.py`)
+
+Replacement entrypoint for `main.py` that skips the `customtkinter` GUI and starts web server, DVR manager, channel fetching, and tunnel directly. Core modules (`web_server.py`, `dvr_manager.py`, `recorder.py`, `channels.py`, `epg.py`, `tunnel.py`) are already GUI-agnostic.
+
+### Credentials via Environment Variables
+
+Headless launcher reads credentials from environment variables as primary source, falling back to `credentials.json` if present:
+
+- `SERVER_URL`
+- `USERNAME`
+- `PASSWORD`
+- `INSTATUNNEL_API_KEY`
+- `INSTATUNNEL_SUBDOMAIN`
+- `RECORDINGS_DIR`
+
+### Remote Access
+
+**Cloudflare** is already fully implemented in `core/tunnel.py` and is the preferred remote access method for NAS deployment. Requires no client-side login.
+
+---
+
+## Feature: Stream Multiplexing (Priority — Build Now)
+
+**Problem:** Current `_proxy_live_stream` opens a fresh provider connection for every Kodi client request. Three users watching the same hockey game = 3 provider connections consumed unnecessarily.
+
+**Solution: `StreamMuxer` class in `web_server.py`**
+- Maintains dictionary keyed by `channel_id` of active provider streams
+- First client request opens provider connection
+- Subsequent clients tap into existing feed (no new provider connection)
+- Clients removed from feed on disconnect
+- Last client disconnect closes provider connection automatically
+- Completely transparent to Kodi — same `/api/stream/live?channel_id=XXX` endpoint
+
+**Multi-User Setup:**
+- Three primary users in different locations
+- Each user has their own Kodi device
+- All point at the same NAS server URL
+- Independent live TV, scheduling, DVR pause/rewind
+- Shared recordings library on NAS
 
 ---
 

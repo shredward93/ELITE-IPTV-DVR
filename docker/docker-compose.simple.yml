@@ -1,0 +1,28 @@
+# ELITE IPTV DVR - Simple Docker Compose (Local Only)
+# No tunnel - just the app on your local network
+
+version: '3.8'
+
+services:
+  elite-dvr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: elite-iptv-dvr:latest
+    container_name: elite-dvr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Change ./recordings to your NAS recordings folder path
+      - ./recordings:/recordings
+      # Persistent data
+      - ./data:/app/data
+    environment:
+      - DVR_BUFFER_DIR=/recordings
+    networks:
+      - elite-network
+
+networks:
+  elite-network:
+    driver: bridge

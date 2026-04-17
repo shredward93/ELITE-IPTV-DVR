@@ -29,7 +29,7 @@ from core.recorder import RecordingJob, run_job, job_duration_secs
 from core.startup import is_autostart_enabled
 from core.tunnel import TunnelManager
 from core.web_server import WebContext, start_web_server
-from ui.dialogs import SetupWizard, CredentialsDialog
+from ui.dialogs import SetupWizard, CredentialsDialog, RecordNowDialog
 
 
 class IPTVRecorderApp(ctk.CTk):
@@ -1177,13 +1177,21 @@ class IPTVRecorderApp(ctk.CTk):
         if not self.selected_channel_id:
             self._set_status("Error: Search and select a channel first.", "red")
             return
+
+        # Get default duration from the main input field
         try:
-            duration_mins = int(self.duration_input.get().strip())
-            if duration_mins <= 0:
-                raise ValueError
+            default_duration = int(self.duration_input.get().strip())
         except ValueError:
-            self._set_status("Error: Duration must be a positive number.", "red")
-            return
+            default_duration = 180
+
+        # Show duration selection dialog with time helper
+        def on_confirm_duration(duration_mins):
+            self._start_recording_now(duration_mins)
+
+        RecordNowDialog(self, self.selected_channel_name, on_confirm_duration, default_duration)
+
+    def _start_recording_now(self, duration_mins):
+        """Actually start the recording with the confirmed duration."""
         now = datetime.datetime.now()
         job = RecordingJob(self.selected_channel_name, self.selected_channel_id,
                            now, duration_mins, self.output_dir)

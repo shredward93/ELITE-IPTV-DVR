@@ -598,3 +598,107 @@ class CredentialsDialog(ctk.CTkToplevel):
                 text="Could not update Windows Startup.",
                 text_color="#e74c3c",
             )
+
+
+# ── Record Now Duration Dialog ────────────────────────────────────────────────
+
+class RecordNowDialog(ctk.CTkToplevel):
+    """
+    Quick dialog for setting duration when recording immediately.
+    Shows preset buttons (30min, 1hr, 2hr, 3hr) and a custom minutes input.
+    """
+
+    def __init__(self, parent, channel_name, on_confirm, default_duration=180):
+        super().__init__(parent)
+        self._on_confirm = on_confirm
+        self._duration = default_duration
+
+        self.title("Record Now")
+        self.geometry("380x280")
+        self.resizable(False, False)
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+
+        # Header
+        ctk.CTkLabel(self, text=f"📺  {channel_name}",
+                     font=("Arial", 14, "bold")).pack(pady=(16, 4))
+        ctk.CTkLabel(self, text="How long do you want to record?",
+                     text_color="gray70", font=("Arial", 11)).pack(pady=(0, 12))
+
+        # Quick presets
+        preset_frame = ctk.CTkFrame(self, fg_color="transparent")
+        preset_frame.pack(pady=(0, 12))
+
+        presets = [("30 min", 30), ("1 hour", 60), ("2 hours", 120), ("3 hours", 180)]
+        for label, mins in presets:
+            ctk.CTkButton(preset_frame, text=label, width=70, height=28,
+                          fg_color="#575959", hover_color="#484949",
+                          command=lambda m=mins: self._set_duration(m)).pack(side="left", padx=3)
+
+        # Divider
+        ctk.CTkFrame(self, height=1, fg_color="#484949").pack(fill="x", padx=20, pady=(0, 12))
+
+        # Custom duration
+        ctk.CTkLabel(self, text="Or enter custom duration:",
+                     font=("Arial", 11)).pack(pady=(0, 4))
+
+        input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        input_frame.pack(pady=(0, 4))
+
+        self._dur_entry = ctk.CTkEntry(input_frame, width=80, justify="center")
+        self._dur_entry.pack(side="left")
+        self._dur_entry.insert(0, str(default_duration))
+
+        ctk.CTkLabel(input_frame, text="minutes", text_color="gray60",
+                     font=("Arial", 11)).pack(side="left", padx=(6, 0))
+
+        # Hours display
+        self._hours_lbl = ctk.CTkLabel(self, text="≈ 3.0 hours",
+                                       text_color="#2ecc71", font=("Arial", 11, "bold"))
+        self._hours_lbl.pack(pady=(4, 8))
+
+        # Bind updates
+        self._dur_entry.bind("<KeyRelease>", self._update_hours)
+        self._dur_entry.bind("<FocusOut>", self._update_hours)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=(8, 16))
+
+        ctk.CTkButton(btn_frame, text="Cancel", width=80,
+                      fg_color="#484949", hover_color="#575959",
+                      command=self.destroy).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(btn_frame, text="Start Recording", width=120,
+                      fg_color="#c0392b", hover_color="#e74c3c",
+                      command=self._confirm).pack(side="left")
+
+        self._update_hours()
+
+    def _set_duration(self, mins):
+        """Set duration from preset button."""
+        self._dur_entry.delete(0, "end")
+        self._dur_entry.insert(0, str(mins))
+        self._update_hours()
+
+    def _update_hours(self, event=None):
+        """Update hours display."""
+        try:
+            mins = int(self._dur_entry.get().strip())
+            hours = mins / 60
+            self._hours_lbl.configure(text=f"≈ {hours:.1f} hours")
+        except (ValueError, AttributeError):
+            self._hours_lbl.configure(text="--")
+
+    def _confirm(self):
+        """Validate and confirm the duration."""
+        try:
+            mins = int(self._dur_entry.get().strip())
+            if mins <= 0:
+                raise ValueError
+            self._duration = mins
+            self.destroy()
+            self._on_confirm(self._duration)
+        except ValueError:
+            self._hours_lbl.configure(text="Enter a valid number of minutes", text_color="#e74c3c")

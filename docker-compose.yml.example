@@ -40,6 +40,10 @@ services:
       # - ./credentials.json:/app/credentials.json:ro
       # Persist scheduled recordings
       - ./data:/app/data
+      # Optional: Mount trimmed playlist and EPG for better performance
+      # The server auto-detects these files if present
+      # - ./Playlist.trimmed.m3u:/app/Playlist.trimmed.m3u:ro
+      # - ./xmltv_cache.trimmed.xml:/app/xmltv_cache.trimmed.xml:ro
       # Mount source code for live updates (no rebuild needed)
       - ./server_headless.py:/app/server_headless.py:ro
       - ./core:/app/core:ro

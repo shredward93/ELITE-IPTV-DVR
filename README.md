@@ -61,6 +61,38 @@ For Windows users, you can download the packaged release directly from the Relea
 
 4. On first run, the Setup Wizard saves your IPTV provider's XtreamCodes credentials to `credentials.json`.
 
+## Updating (NAS/Docker Deployment)
+
+If running on a Synology NAS (or any Docker setup), follow this workflow for code updates:
+
+### Quick Update Workflow
+
+**On your PC:**
+
+1. Make code changes or pull latest updates
+2. Push to GitHub: `git push` (or run `1 - Push to GitHub.bat`)
+
+**On your NAS:**
+
+1. **Git Server app** → Pull latest code from GitHub
+2. **Container Manager** → Select `elite-iptv-dvr` → **Stop**, then **Start**
+
+That's it! The updated files are live immediately.
+
+### Why This Works
+
+- Code files are volume-mounted (live reload on restart)
+- `PYTHONDONTWRITEBYTECODE=1` prevents Python caching issues
+- Your `docker-compose.yml` with credentials is in `.gitignore` and stays untouched
+
+### When to Rebuild
+
+**Just restart** (10 seconds): Changes to `.py` files, `static/`, `core/`
+
+**Full rebuild** (2-5 minutes): Changes to `requirements.txt`, `Dockerfile`, or base image updates
+
+To rebuild: Container Manager → **Action** → **Reset and Rebuild**
+
 ## Usage
 
 ### Backend

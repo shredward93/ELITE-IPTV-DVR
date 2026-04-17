@@ -251,19 +251,63 @@ class IPTVRecorderApp(ctk.CTk):
         self.backup_clear_btn.pack(side="right", padx=(4, 0))
         self.backup_frame.pack(fill="x", padx=12, pady=(0, 4))
 
+        # ── Recording Time Selection ──
         self.td_frame = ctk.CTkFrame(panel, fg_color="transparent")
         self.td_frame.pack(fill="x", padx=12, pady=(4, 6))
-        left = ctk.CTkFrame(self.td_frame, fg_color="transparent")
-        left.pack(side="left", expand=True, fill="x", padx=(0, 5))
-        ctk.CTkLabel(left, text="Start Time", anchor="w").pack(fill="x")
-        self.time_input = ctk.CTkEntry(left, placeholder_text="07:00 PM")
+
+        # Quick preset buttons
+        preset_row = ctk.CTkFrame(self.td_frame, fg_color="transparent")
+        preset_row.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(preset_row, text="Quick Presets:", anchor="w", font=("Arial", 11)).pack(side="left", padx=(0, 8))
+        for label, start, end in [("30 min", "now", 30), ("1 hour", "now", 60), ("2 hours", "now", 120), ("3 hours", "now", 180)]:
+            ctk.CTkButton(preset_row, text=label, width=55, height=24, font=("Arial", 10),
+                          fg_color="#575959", hover_color="#484949",
+                          command=lambda s=start, d=end: self._apply_preset_duration(d)).pack(side="left", padx=2)
+
+        # Time range row (Start Time - End Time)
+        time_range_row = ctk.CTkFrame(self.td_frame, fg_color="transparent")
+        time_range_row.pack(fill="x", pady=(0, 6))
+
+        start_frame = ctk.CTkFrame(time_range_row, fg_color="transparent")
+        start_frame.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        ctk.CTkLabel(start_frame, text="Start Time (e.g., 07:00 PM)", anchor="w", font=("Arial", 11)).pack(fill="x")
+        self.time_input = ctk.CTkEntry(start_frame, placeholder_text="07:00 PM")
         self.time_input.pack(fill="x")
-        right = ctk.CTkFrame(self.td_frame, fg_color="transparent")
-        right.pack(side="right", expand=True, fill="x", padx=(5, 0))
-        ctk.CTkLabel(right, text="Duration (minutes)", anchor="w").pack(fill="x")
-        self.duration_input = ctk.CTkEntry(right, placeholder_text="180")
+
+        end_frame = ctk.CTkFrame(time_range_row, fg_color="transparent")
+        end_frame.pack(side="right", expand=True, fill="x", padx=(5, 0))
+        end_row = ctk.CTkFrame(end_frame, fg_color="transparent")
+        end_row.pack(fill="x")
+        ctk.CTkLabel(end_row, text="End Time (optional)", anchor="w", font=("Arial", 11)).pack(side="left")
+        ctk.CTkButton(end_row, text="Calc", width=40, height=20, font=("Arial", 9),
+                      fg_color="#575959", hover_color="#484949",
+                      command=self._calc_duration_from_end_time).pack(side="right")
+        self.end_time_input = ctk.CTkEntry(end_frame, placeholder_text="09:00 PM")
+        self.end_time_input.pack(fill="x")
+
+        # Duration row with clear minutes indicator
+        duration_row = ctk.CTkFrame(self.td_frame, fg_color="transparent")
+        duration_row.pack(fill="x", pady=(4, 0))
+
+        dur_left = ctk.CTkFrame(duration_row, fg_color="transparent")
+        dur_left.pack(side="left", expand=True, fill="x", padx=(0, 5))
+        dur_label_row = ctk.CTkFrame(dur_left, fg_color="transparent")
+        dur_label_row.pack(fill="x")
+        ctk.CTkLabel(dur_label_row, text="Duration", anchor="w", font=("Arial", 11, "bold")).pack(side="left")
+        ctk.CTkLabel(dur_label_row, text="(minutes)", anchor="w", text_color="gray60", font=("Arial", 10)).pack(side="left", padx=(4, 0))
+        self.duration_input = ctk.CTkEntry(dur_left, placeholder_text="e.g., 120 = 2 hours")
         self.duration_input.pack(fill="x")
         self.duration_input.insert(0, "180")
+
+        dur_right = ctk.CTkFrame(duration_row, fg_color="transparent")
+        dur_right.pack(side="right", expand=True, fill="x", padx=(5, 0))
+        dur_hint_row = ctk.CTkFrame(dur_right, fg_color="transparent")
+        dur_hint_row.pack(fill="x")
+        ctk.CTkLabel(dur_hint_row, text="≈ Hours:", anchor="w", text_color="gray60", font=("Arial", 10)).pack(side="left")
+        self.hours_display_label = ctk.CTkLabel(dur_hint_row, text="3.0 hrs", anchor="w", text_color="#2ecc71", font=("Arial", 10, "bold"))
+        self.hours_display_label.pack(side="left", padx=(4, 0))
+        self.duration_input.bind("<KeyRelease>", self._update_hours_display)
+        self.duration_input.bind("<FocusOut>", self._update_hours_display)
 
         ctk.CTkLabel(panel, text="Output Folder", anchor="w").pack(fill="x", padx=12, pady=(4, 2))
         folder_row = ctk.CTkFrame(panel, fg_color="transparent")
@@ -293,6 +337,14 @@ class IPTVRecorderApp(ctk.CTk):
         self.save_m3u_btn.pack(side="right")
 
         # ── Right Pane ──
+        # ACTIVE RECORDINGS (moved to top)
+        ctk.CTkLabel(right_pane, text="Active Recordings", font=("Arial", 13, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        self.recordings_frame = ctk.CTkScrollableFrame(right_pane)
+        self.recordings_frame.pack(fill="both", expand=True, pady=(0, 8))
+        self.no_recordings_label = ctk.CTkLabel(self.recordings_frame, text="No recordings scheduled.", text_color="gray")
+        self.no_recordings_label.pack(pady=10)
+
+        # Status panel (moved below recordings)
         status_panel = ctk.CTkFrame(right_pane)
         status_panel.pack(fill="x", pady=(0, 8))
         self.global_status = ctk.CTkLabel(status_panel, text="Fetching channel list…", text_color="gray")
@@ -334,12 +386,6 @@ class IPTVRecorderApp(ctk.CTk):
         self.tunnel_copy_btn.pack(side="left", padx=(8, 0))
         self._refresh_remote_links()
         self._refresh_startup_status()
-
-        ctk.CTkLabel(right_pane, text="Active Recordings", font=("Arial", 13, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
-        self.recordings_frame = ctk.CTkScrollableFrame(right_pane)
-        self.recordings_frame.pack(fill="both", expand=True, pady=(0, 8))
-        self.no_recordings_label = ctk.CTkLabel(self.recordings_frame, text="No recordings scheduled.", text_color="gray")
-        self.no_recordings_label.pack(pady=10)
 
         ctk.CTkLabel(right_pane, text="Recording Log", font=("Arial", 13, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
         self.log_box = ctk.CTkTextbox(right_pane, height=160, state="disabled")
@@ -1331,6 +1377,61 @@ class IPTVRecorderApp(ctk.CTk):
         if duration_mins is not None:
             self.duration_input.delete(0, "end")
             self.duration_input.insert(0, str(duration_mins))
+            self._update_hours_display()
+
+    def _apply_preset_duration(self, duration_mins):
+        """Apply a preset duration and update hours display."""
+        self.duration_input.delete(0, "end")
+        self.duration_input.insert(0, str(duration_mins))
+        self._update_hours_display()
+        self._set_status(f"Duration set to {duration_mins} minutes ({duration_mins/60:.1f} hours)", "#2ecc71")
+
+    def _update_hours_display(self, event=None):
+        """Update the hours display label based on current duration input."""
+        try:
+            mins = int(self.duration_input.get().strip())
+            hours = mins / 60
+            self.hours_display_label.configure(text=f"{hours:.1f} hrs")
+        except (ValueError, AttributeError):
+            self.hours_display_label.configure(text="-- hrs")
+
+    def _calc_duration_from_end_time(self):
+        """Calculate duration from start time and end time inputs."""
+        try:
+            start_str = self.time_input.get().strip()
+            end_str = self.end_time_input.get().strip()
+
+            if not start_str or not end_str:
+                self._set_status("Enter both start and end times", "#e74c3c")
+                return
+
+            now = datetime.datetime.now()
+            start_time = self._parse_time_string(start_str, now)
+            end_time = self._parse_time_string(end_str, now)
+
+            if end_time <= start_time:
+                end_time += datetime.timedelta(days=1)
+
+            duration_mins = int((end_time - start_time).total_seconds() / 60)
+
+            self.duration_input.delete(0, "end")
+            self.duration_input.insert(0, str(duration_mins))
+            self._update_hours_display()
+
+            self._set_status(f"Duration: {duration_mins} min ({duration_mins/60:.1f} hrs) from {start_time.strftime('%I:%M %p')} to {end_time.strftime('%I:%M %p')}", "#2ecc71")
+        except ValueError as e:
+            self._set_status(f"Invalid time format. Use format like '07:00 PM' or '19:00'", "#e74c3c")
+
+    def _parse_time_string(self, time_str, base_date):
+        """Parse a time string like '07:00 PM' or '19:00' into a datetime."""
+        time_str = time_str.strip().upper()
+        for fmt in ["%I:%M %p", "%I:%M%p", "%H:%M", "%I %p", "%I%p"]:
+            try:
+                parsed = datetime.datetime.strptime(time_str, fmt)
+                return base_date.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+            except ValueError:
+                continue
+        raise ValueError(f"Cannot parse time: {time_str}")
 
     def _set_status(self, message, color="gray"):
         self._status_text = message

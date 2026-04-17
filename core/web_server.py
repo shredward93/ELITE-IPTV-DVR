@@ -395,7 +395,13 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         # ── Completed recordings list ─────────────────────────────────────────
         elif path == "/recordings":
-            self._json(self._list_recordings())
+            recordings = self._list_recordings()
+            # Return HTML if browser/Kodi requests it, JSON otherwise
+            accept = self.headers.get("Accept", "")
+            if "html" in accept.lower() or qs.get("format", [""])[0].lower() == "html":
+                self._serve_recordings_html(recordings)
+            else:
+                self._json(recordings)
 
         # ── Completed recording file serving ──────────────────────────────────
         elif path.startswith("/recordings/"):
@@ -623,6 +629,30 @@ class RemoteHandler(BaseHTTPRequestHandler):
             except OSError:
                 pass
         return result
+
+    def _serve_recordings_html(self, recordings: list):
+        """Serve HTML directory listing for Kodi browser compatibility."""
+        lines = [
+            "<!DOCTYPE html>",
+            "<html><head><title>ELITE IPTV DVR Recordings</title></head>",
+            "<body><h1>Recordings</h1><ul>"
+        ]
+        for rec in recordings:
+            filename = rec["filename"]
+            size_mb = rec["size_bytes"] / (1024 * 1024)
+            recorded = rec["recorded_at"][:19].replace("T", " ")  # Format: YYYY-MM-DD HH:MM:SS
+            lines.append(f'<li><a href="/recordings/{filename}">{filename}</a> ({size_mb:.1f} MB) - {recorded}</li>')
+        lines.append("</ul></body></html>")
+        html = "\n".join(lines)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        try:
+            self.wfile.write(html.encode())
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _build_recordings_response(self) -> dict:
         if not self.ctx.get_jobs:

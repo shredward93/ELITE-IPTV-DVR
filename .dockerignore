@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific - not needed in Docker image
+*.md
+docs/
+screenshots/
+*.bat
+*.sh
+iptv_recorder.py  # Legacy file
+
+# Local data (will be mounted as volumes)
+recordings/
+data/
+credentials.json
+favorites.json
+settings.json
+scheduled_recordings.json
+*.ts
+*.m3u
+*.xml

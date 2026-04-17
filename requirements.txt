@@ -1,0 +1,4 @@
+# ELITE IPTV DVR — Python dependencies
+# For headless server (NAS/Docker deployment)
+
+requests>=2.28.0

@@ -1,0 +1,70 @@
+REBUILD CHECK - ELITE IPTV DVR NAS Deployment
+==============================================
+
+QUICK REFERENCE: When do you need a full rebuild?
+==================================================
+
+NO REBUILD NEEDED (just git push + restart):
+-------------------------------------------
+[X] server_headless.py changed
+[X] core/*.py files changed
+[X] static/* files changed
+[X] config.py changed
+[X] ui/*.py files changed (if present)
+
+Action: Run "2 - Update NAS.bat" (10 seconds)
+
+REBUILD REQUIRED (use "3 - Full Rebuild NAS.bat"):
+-------------------------------------------------
+[!] requirements.txt changed - New Python packages must be installed
+[!] Dockerfile changed - Image configuration changed
+[!] docker-compose.yml changed - Service setup changed (sometimes)
+[!] Base image security updates - python:3.11-slim update available
+[!] New system packages in Dockerfile (ffmpeg, curl, etc.)
+
+Action: Run "3 - Full Rebuild NAS.bat" (2-5 minutes)
+
+==================================================
+HOW TO CHECK BEFORE PUSHING
+==================================================
+
+Run this command in your project folder:
+
+  git diff --name-only HEAD~1
+
+Look at the files changed:
+  - Ends in .py? -> Just restart
+  - Is "requirements.txt"? -> REBUILD NEEDED
+  - Is "Dockerfile"? -> REBUILD NEEDED
+
+==================================================
+AUTOMATIC REBUILD DETECTION
+==================================================
+
+This file tracks the last known state of files that
+require rebuilds. If you see changes below, REBUILD!
+
+LAST_KNOWN_REQUIREMENTS_HASH: (update after rebuild)
+LAST_KNOWN_DOCKERFILE_HASH: (update after rebuild)
+
+TO UPDATE HASHES AFTER REBUILD:
+  certutil -hashfile requirements.txt SHA256
+  certutil -hashfile Dockerfile SHA256
+
+Or use git:
+  git rev-parse HEAD:requirements.txt
+  git rev-parse HEAD:Dockerfile
+
+==================================================
+SUMMARY
+==================================================
+
+Code changes (.py)  ->  Push + Restart (10 sec)
+Dependency changes  ->  Push + Rebuild (2-5 min)
+
+Shortcut folder: "NAS App Update/"
+1 - Push to GitHub.bat     -> Push code
+2 - Update NAS.bat         -> Fast restart
+3 - Full Rebuild NAS.bat   -> Slow rebuild
+
+==================================================

@@ -25,6 +25,122 @@ from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg, filter_guid
 from core.recorder import job_duration_secs
 
 
+class StreamMuxer:
+    """
+    Multi-client stream multiplexer for live TV.
+
+    Maintains a single provider connection per channel and fans out
+to multiple Kodi clients. When the last client disconnects, the
+    provider connection closes automatically.
+    """
+
+    def __init__(self):
+        # channel_id -> {"request": Response, "clients": set(handler), "thread": Thread}
+        self._streams: dict[str, dict] = {}
+        self._lock = threading.Lock()
+
+    def _read_provider_stream(self, channel_id: str, stream_url: str):
+        """Background thread: read from provider, write to all connected clients."""
+        try:
+            with requests.get(stream_url, stream=True, timeout=10) as r:
+                # Store the response so new clients can check status
+                with self._lock:
+                    if channel_id not in self._streams:
+                        return
+                    self._streams[channel_id]["request"] = r
+                    self._streams[channel_id]["status_code"] = r.status_code
+
+                if r.status_code != 200:
+                    return
+
+                for chunk in r.iter_content(chunk_size=65536):
+                    if not chunk:
+                        continue
+
+                    with self._lock:
+                        if channel_id not in self._streams:
+                            break
+                        clients = list(self._streams[channel_id]["clients"])
+
+                    if not clients:
+                        break
+
+                    # Write to all clients (remove disconnected ones)
+                    disconnected = []
+                    for handler in clients:
+                        try:
+                            handler.wfile.write(chunk)
+                        except (BrokenPipeError, ConnectionResetError):
+                            disconnected.append(handler)
+
+                    if disconnected:
+                        with self._lock:
+                            if channel_id in self._streams:
+                                self._streams[channel_id]["clients"].difference_update(disconnected)
+        except Exception:
+            pass
+        finally:
+            # Cleanup: remove this channel's entry when done
+            with self._lock:
+                if channel_id in self._streams:
+                    del self._streams[channel_id]
+
+    def add_client(self, channel_id: str, handler) -> bool:
+        """
+        Add a client handler to a channel's multiplexed stream.
+        Returns True if the client was added successfully, False otherwise.
+        """
+        stream_url = (
+            f"{config.SERVER_URL.rstrip('/')}"
+            f"/live/{config.USERNAME}/{config.PASSWORD}/{channel_id}.ts"
+        )
+
+        with self._lock:
+            if channel_id not in self._streams:
+                # First client for this channel - start provider connection
+                self._streams[channel_id] = {
+                    "request": None,
+                    "clients": {handler},
+                    "status_code": None,
+                }
+                # Start background thread to read from provider
+                t = threading.Thread(
+                    target=self._read_provider_stream,
+                    args=(channel_id, stream_url),
+                    daemon=True
+                )
+                t.start()
+                self._streams[channel_id]["thread"] = t
+            else:
+                # Add to existing stream
+                self._streams[channel_id]["clients"].add(handler)
+
+            # Wait briefly for connection to establish
+            import time
+            for _ in range(50):  # 5 seconds max wait
+                status = self._streams.get(channel_id, {}).get("status_code")
+                if status is not None:
+                    break
+                time.sleep(0.1)
+
+            # Check if connection succeeded
+            if self._streams.get(channel_id, {}).get("status_code") != 200:
+                self._streams[channel_id]["clients"].discard(handler)
+                return False
+
+        return True
+
+    def remove_client(self, channel_id: str, handler) -> None:
+        """Remove a client from a channel's stream."""
+        with self._lock:
+            if channel_id in self._streams:
+                self._streams[channel_id]["clients"].discard(handler)
+
+
+# Global StreamMuxer instance
+_stream_muxer = StreamMuxer()
+
+
 class WebContext:
     """
     Thin bridge between the HTTP handler and the application.
@@ -445,29 +561,49 @@ class RemoteHandler(BaseHTTPRequestHandler):
             pass
 
     def _proxy_live_stream(self, channel_id: str) -> None:
-        """Fetch the IPTV stream on behalf of the client and pipe bytes through."""
-        stream_url = (
-            f"{config.SERVER_URL.rstrip('/')}"
-            f"/live/{config.USERNAME}/{config.PASSWORD}/{channel_id}.ts"
-        )
-        try:
-            with requests.get(stream_url, stream=True, timeout=10) as r:
-                self.send_response(200)
-                self.send_header("Content-Type", "video/mp2t")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                for chunk in r.iter_content(chunk_size=65536):
-                    if chunk:
-                        try:
-                            self.wfile.write(chunk)
-                        except (BrokenPipeError, ConnectionResetError):
-                            break
-        except Exception:
+        """
+        Fetch the IPTV stream on behalf of the client and pipe bytes through.
+        Uses StreamMuxer to share provider connections across multiple clients.
+        """
+        # Try to add this client to the multiplexed stream
+        if _stream_muxer.add_client(channel_id, self):
+            # Client successfully added - stream is being handled by muxer
+            # Just keep connection alive until client disconnects
             try:
-                self.send_response(502)
-                self.end_headers()
-            except Exception:
+                while True:
+                    # Check if we're still in the client list
+                    import time
+                    time.sleep(1)
+            except (BrokenPipeError, ConnectionResetError):
                 pass
+            finally:
+                _stream_muxer.remove_client(channel_id, self)
+        else:
+            # Muxer failed to connect - fall back to direct proxy
+            stream_url = (
+                f"{config.SERVER_URL.rstrip('/')}"
+                f"/live/{config.USERNAME}/{config.PASSWORD}/{channel_id}.ts"
+            )
+            try:
+                with requests.get(stream_url, stream=True, timeout=10) as r:
+                    self.send_response(r.status_code if r.status_code == 200 else 502)
+                    if r.status_code == 200:
+                        self.send_header("Content-Type", "video/mp2t")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    if r.status_code == 200:
+                        for chunk in r.iter_content(chunk_size=65536):
+                            if chunk:
+                                try:
+                                    self.wfile.write(chunk)
+                                except (BrokenPipeError, ConnectionResetError):
+                                    break
+            except Exception:
+                try:
+                    self.send_response(502)
+                    self.end_headers()
+                except Exception:
+                    pass
 
     def _list_recordings(self) -> list:
         if not self.ctx.get_recordings_dir:

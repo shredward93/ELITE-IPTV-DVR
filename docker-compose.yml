@@ -1,0 +1,46 @@
+# Docker Compose for ELITE IPTV DVR on Synology NAS
+# Place this file and credentials.json in a folder on your NAS,
+# then run: docker-compose up -d
+
+version: "3.8"
+
+services:
+  elite-iptv-dvr:
+    build: .
+    container_name: elite-iptv-dvr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Option 1: Set credentials via environment variables
+      SERVER_URL: "https://dragtvplus.lol"
+      USERNAME: "dorfyboi"
+      PASSWORD: "r2TjEvxpbM"
+      TUNNEL_PROVIDER: "cloudflare"  # or "instatunnel"
+      # INSTATUNNEL_API_KEY: "your_key"
+      # INSTATUNNEL_SUBDOMAIN: "your_subdomain"
+      CLOUDFLARE_TUNNEL_TOKEN: "eyJhIjoiNTczMGM4Njg0ZGRkYjFlODMwZDQwZGQyNmJjYzhjZjciLCJ0IjoiN2U3MmVmMmUtM2FhMS00ZGY4LTljNmYtOTM3ZDE5ZjFjZjk3IiwicyI6Ik5HSXpOVEZoWmpndE1ERXpZeTAwWkdJMUxXSTJaVFV0WmpWbE5EZG1aR1kxWWpGaCJ9"
+      CLOUDFLARE_DOMAIN: "server.eliteiptvdvr.uk"
+      
+      # Option 2: Mount credentials.json (see volumes below)
+      
+      # Where recordings are stored inside container
+      RECORDINGS_DIR: "/app/recordings"
+    volumes:
+      # Mount recordings folder on NAS
+      - ./recordings:/app/recordings
+      # Mount credentials from file (uncomment to use instead of env vars)
+      - ./credentials.json:/app/credentials.json:ro
+      # Persist scheduled recordings
+      - ./data:/app/data
+      # Mount source code for live updates (no rebuild needed)
+      - ./server_headless.py:/app/server_headless.py:ro
+      - ./core:/app/core:ro
+      - ./static:/app/static:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

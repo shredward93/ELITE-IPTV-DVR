@@ -9,12 +9,12 @@
 1. **Create project folder** on NAS: `/docker/eliteiptvdvr/`
 
 2. **Upload root files first** (flat in the folder):
-   - `docker-compose.yml`
    - `Dockerfile`
    - `requirements.txt`
    - `server_headless.py`
    - `config.py`
    - `.dockerignore` (optional)
+   - **NOT** `docker-compose.yml` (create this manually with your credentials)
 
 3. **Create and upload subfolders** (files go INSIDE these):
    - Create `core/` folder → upload all files from PC's `core/` folder
@@ -29,29 +29,28 @@
    ├── static/        ← folder with remote.html
    ├── data/          ← empty folder
    ├── recordings/    ← empty folder
-   ├── docker-compose.yml
+   ├── docker-compose.yml      ← Create this manually from docker-compose.yml.example
    ├── Dockerfile
    └── ...other root files
    ```
 
 ### Option 1: Docker Compose (Recommended)
 
-1. **Set up files** as described above
+1. **Set up files** as described above (git pull or manual copy)
 
-2. **Edit `docker-compose.yml`** to set your credentials:
-   ```yaml
-   environment:
-     SERVER_URL: "http://your-iptv-provider.com"
-     USERNAME: "your_username"
-     PASSWORD: "your_password"
-     TUNNEL_PROVIDER: "cloudflare"  # or "instatunnel"
-     CLOUDFLARE_TUNNEL_TOKEN: "your_token"
-     CLOUDFLARE_DOMAIN: "iptv.yourdomain.com"
+2. **Create `docker-compose.yml` manually** (copy from `docker-compose.yml.example` and fill in your credentials):
+   ```bash
+   cp docker-compose.yml.example docker-compose.yml
+   # Edit docker-compose.yml with your credentials
    ```
 
-3. **SSH into your NAS** and run:
+   Or create it directly with your credentials filled in.
+
+   **IMPORTANT:** `docker-compose.yml` is in `.gitignore` and will NOT be pulled from GitHub. This protects your credentials.
+
+3. **Run the container** in Container Manager or via SSH:
    ```bash
-   cd /volume1/docker/elite-iptv-dvr
+   cd /volume1/docker/eliteiptvdvr
    docker-compose up -d
    ```
 

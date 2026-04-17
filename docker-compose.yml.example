@@ -1,6 +1,6 @@
 # Docker Compose for ELITE IPTV DVR on Synology NAS
-# Place this file and credentials.json in a folder on your NAS,
-# then run: docker-compose up -d
+# Copy this file to docker-compose.yml and fill in your credentials
+# IMPORTANT: Never commit docker-compose.yml with real credentials to Git!
 
 version: "3.8"
 
@@ -12,25 +12,32 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Option 1: Set credentials via environment variables
-      SERVER_URL: "https://dragtvplus.lol"
-      USERNAME: "dorfyboi"
-      PASSWORD: "r2TjEvxpbM"
-      TUNNEL_PROVIDER: "cloudflare"  # or "instatunnel"
+      # REQUIRED: Your IPTV provider credentials
+      SERVER_URL: "https://your-provider.com"
+      USERNAME: "your_username"
+      PASSWORD: "your_password"
+      
+      # Tunnel provider: cloudflare or instatunnel
+      TUNNEL_PROVIDER: "cloudflare"
+      
+      # For InstaTunnel:
       # INSTATUNNEL_API_KEY: "your_key"
       # INSTATUNNEL_SUBDOMAIN: "your_subdomain"
-      CLOUDFLARE_TUNNEL_TOKEN: "eyJhIjoiNTczMGM4Njg0ZGRkYjFlODMwZDQwZGQyNmJjYzhjZjciLCJ0IjoiN2U3MmVmMmUtM2FhMS00ZGY4LTljNmYtOTM3ZDE5ZjFjZjk3IiwicyI6Ik5HSXpOVEZoWmpndE1ERXpZeTAwWkdJMUxXSTJaVFV0WmpWbE5EZG1aR1kxWWpGaCJ9"
-      CLOUDFLARE_DOMAIN: "server.eliteiptvdvr.uk"
       
-      # Option 2: Mount credentials.json (see volumes below)
+      # For Cloudflare Tunnel:
+      CLOUDFLARE_TUNNEL_TOKEN: "your_token_here"
+      CLOUDFLARE_DOMAIN: "your.domain.com"
       
-      # Where recordings are stored inside container
+      # Storage location
       RECORDINGS_DIR: "/app/recordings"
+      
+      # Prevent Python from caching bytecode (fixes update issues)
+      PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       # Mount recordings folder on NAS
       - ./recordings:/app/recordings
-      # Mount credentials from file (uncomment to use instead of env vars)
-      - ./credentials.json:/app/credentials.json:ro
+      # Optional: Mount credentials from file instead of env vars
+      # - ./credentials.json:/app/credentials.json:ro
       # Persist scheduled recordings
       - ./data:/app/data
       # Mount source code for live updates (no rebuild needed)

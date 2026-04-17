@@ -16,3 +16,4 @@ settings.json
 dvr_buffer/
 recordings/
 .env
+docker-compose.yml

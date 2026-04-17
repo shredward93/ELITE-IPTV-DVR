@@ -106,32 +106,41 @@ class HeadlessServer:
 
     def _web_get_status(self) -> dict:
         """Return status for web API."""
-        active = []
-        recent = []
+        now = datetime.datetime.now()
+        recordings = []
         for job in self.recording_jobs:
-            if job.status in ("waiting", "recording"):
-                entry = {"index": self.recording_jobs.index(job), "channel_name": job.channel_name, "status": job.status}
-                if job.actual_start:
-                    elapsed = int((datetime.datetime.now() - job.actual_start).total_seconds())
-                    entry["elapsed_secs"] = elapsed
-                    entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
-                if job.output_file:
-                    entry["output_file"] = os.path.basename(job.output_file)
-                active.append(entry)
+            if job.status == "complete":
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": "Recording finished.", "stoppable": False})
+            elif job.status == "error":
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": "Error encountered.", "stoppable": False})
+            elif job.status == "stopped":
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": "Stopped by user.", "stoppable": False})
+            elif job.status == "waiting":
+                secs = max(0, int((job.start_time - now).total_seconds()))
+                txt = f"Starts in {str(datetime.timedelta(seconds=secs))}"
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": txt, "stoppable": True})
+            elif job.status == "recording" and job.actual_start:
+                elapsed = int((now - job.actual_start).total_seconds())
+                remaining = max(0, job_duration_secs(job) - elapsed)
+                txt = (f"RECORDING  •  {str(datetime.timedelta(seconds=elapsed))} elapsed  •  "
+                       f"{str(datetime.timedelta(seconds=remaining))} remaining")
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": txt, "stoppable": True})
             else:
-                labels = {"complete": "Recording complete.", "error": "Error encountered.", "stopped": "Stopped by user."}
-                recent.append({
-                    "channel_name": job.channel_name,
-                    "status": job.status,
-                    "status_text": labels.get(job.status, job.status),
-                })
+                secs = max(0, int((job.start_time - now).total_seconds()))
+                recordings.append({"name": job.channel_name, "status": job.status,
+                                   "status_text": f"Starts in {str(datetime.timedelta(seconds=secs))}",
+                                   "stoppable": True})
 
         backup_info = ""
         return {
-            "recordings": {"active": active, "recent": recent[-10:]},
-            "status_text": f"Ready — {len(self.all_channel_names):,} channels" if self._channels_loaded else "Loading channels…",
+            "recordings": recordings,
+            "status": f"Ready — {len(self.all_channel_names):,} channels" if self._channels_loaded else "Loading channels…",
             "backup_name": backup_info,
-            "log_tail": self._log_entries[-20:],
         }
 
     def _web_get_channels(self, q: str) -> list[dict]:

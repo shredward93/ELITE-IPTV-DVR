@@ -676,9 +676,10 @@ class RemoteHandler(BaseHTTPRequestHandler):
         ]
         for rec in recordings:
             filename = rec["filename"]
+            from urllib.parse import quote
             size_mb = rec["size_bytes"] / (1024 * 1024)
             recorded = rec["recorded_at"][:19].replace("T", " ")  # Format: YYYY-MM-DD HH:MM:SS
-            lines.append(f'<li><a href="{filename}">{filename}</a> ({size_mb:.1f} MB) - {recorded}</li>')
+            lines.append(f'<li><a href="{quote(filename)}">{filename}</a> ({size_mb:.1f} MB) - {recorded}</li>')
         lines.append("</ul></body></html>")
         html = "\n".join(lines)
 

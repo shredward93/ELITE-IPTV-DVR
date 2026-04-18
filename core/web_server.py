@@ -389,6 +389,8 @@ class WebContext:
         get_all_channels_fn=None,   # () -> list[{name, id}]  — full list, no limit
         get_jobs_fn=None,           # () -> list[RecordingJob]
         get_recordings_dir_fn=None, # () -> str | None
+        preview_start_fn=None,      # (channel_id: str) -> dict — Live DVR web remote
+        preview_stop_fn=None,       # (preview_id: int) -> dict
     ):
         self.get_status          = get_status_fn
         self.get_channels        = get_channels_fn
@@ -399,6 +401,8 @@ class WebContext:
         self.get_all_channels    = get_all_channels_fn
         self.get_jobs            = get_jobs_fn
         self.get_recordings_dir  = get_recordings_dir_fn
+        self.preview_start       = preview_start_fn
+        self.preview_stop        = preview_stop_fn
 
 
 class RemoteHandler(BaseHTTPRequestHandler):
@@ -608,8 +612,9 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self._json({
                 "channel_name":    name,
                 "encoder":         mobile_transcode_manager.encoder,
-                "profiles":        ["original", "hd", "mobile", "low"],
+                "profiles":        ["original", "data_saver", "hd", "mobile", "low"],
                 "original_url":    f"/api/stream/live?channel_id={channel_id}",
+                "data_saver_url":  f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=data_saver",
                 "mobile_url":      f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=mobile",
                 "hd_url":          f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=hd",
                 "low_url":         f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=low",
@@ -829,6 +834,24 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 return
             self.ctx.dvr_manager.stop()
             self._json({"ok": True})
+
+        # ── Web remote: Live DVR (ephemeral HLS buffer) ───────────────────────
+        elif path == "/api/preview/start":
+            channel_id = (body.get("channel_id") or "").strip()
+            if not channel_id:
+                self._error(400, "channel_id required")
+                return
+            if not self.ctx.preview_start:
+                self._error(503, "live preview not available")
+                return
+            self._json(self.ctx.preview_start(channel_id))
+
+        elif path == "/api/preview/stop":
+            preview_id = body.get("preview_id")
+            if not self.ctx.preview_stop:
+                self._error(503, "live preview not available")
+                return
+            self._json(self.ctx.preview_stop(preview_id))
 
         else:
             self.send_response(404)

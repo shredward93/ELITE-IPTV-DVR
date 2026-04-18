@@ -28,6 +28,7 @@ from core.dvr_manager import DVRManager
 from core.recorder import RecordingJob, run_job, job_duration_secs
 from core.startup import is_autostart_enabled
 from core.tunnel import TunnelManager
+from core.live_preview import LivePreviewManager
 from core.web_server import WebContext, start_web_server
 from ui.dialogs import SetupWizard, CredentialsDialog, RecordNowDialog
 
@@ -77,6 +78,7 @@ class IPTVRecorderApp(ctk.CTk):
         self.current_tunnel_url    = None
 
         self.tunnel_mgr = TunnelManager()
+        self.live_preview = LivePreviewManager()
 
         self._load_favorites()
         self._build_ui()
@@ -583,6 +585,8 @@ class IPTVRecorderApp(ctk.CTk):
             ],
             get_jobs_fn=lambda: list(self.recording_jobs),
             get_recordings_dir_fn=lambda: self.output_dir,
+            preview_start_fn=self.live_preview.start,
+            preview_stop_fn=self.live_preview.stop,
         )
         try:
             url = start_web_server(ctx)
@@ -1361,6 +1365,7 @@ class IPTVRecorderApp(ctk.CTk):
 
     def _on_closing(self):
         self.tunnel_mgr.stop()
+        self.live_preview.stop_all()
         for job in self.recording_jobs:
             if job.status == "recording" and job.process:
                 try:

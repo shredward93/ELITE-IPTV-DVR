@@ -61,6 +61,14 @@ def _profile_args(profile: str, encoder: str) -> list[str]:
         v_bufsize = "6000k"
         fps       = "60"
         audio     = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"]
+    elif profile == "data_saver":
+        # Web remote "Data saver": 720p60 cap @ ~2.5 Mbps video (moderate cellular / Wi‑Fi)
+        scale    = "scale=-2:720"
+        v_bitrate = "2500k"
+        v_maxrate = "2800k"
+        v_bufsize = "5000k"
+        fps       = "60"
+        audio     = ["-c:a", "aac", "-b:a", "96k", "-ac", "2"]
     elif profile == "low":
         scale    = "scale=-2:360"
         v_bitrate = "700k"
@@ -248,7 +256,7 @@ class MobileTranscodeManager:
         Returns the session, or None if we're at capacity and no slot could
         be freed. Safe to call from request handlers on every segment fetch.
         """
-        if profile not in ("mobile", "hd", "low"):
+        if profile not in ("mobile", "hd", "low", "data_saver"):
             profile = "mobile"
         key = f"{channel_id}|{profile}"
 

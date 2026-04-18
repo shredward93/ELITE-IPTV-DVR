@@ -26,6 +26,7 @@ import config
 from core.channels import parse_m3u_channels
 from core.credentials import load_credentials
 from core.dvr_manager import DVRManager
+from core.live_preview import LivePreviewManager
 from core.recorder import RecordingJob, run_job, job_duration_secs
 from core.tunnel import TunnelManager
 from core.web_server import WebContext, start_web_server
@@ -40,6 +41,7 @@ class HeadlessServer:
         self.all_channel_names: list[str] = []
         self.output_dir: str = os.getenv("RECORDINGS_DIR", config._APP_DIR)
         self.dvr_manager = DVRManager()
+        self.live_preview = LivePreviewManager()
         self.tunnel_mgr = TunnelManager()
         self.web_actions: queue.Queue = queue.Queue()
         self._log_entries: list[str] = []
@@ -327,6 +329,8 @@ class HeadlessServer:
             get_all_channels_fn=self._web_get_all_channels,
             get_jobs_fn=self._web_get_jobs,
             get_recordings_dir_fn=self._web_get_recordings_dir,
+            preview_start_fn=self.live_preview.start,
+            preview_stop_fn=self.live_preview.stop,
         )
         url = start_web_server(ctx)
         self._log(f"Web server started at {url}")
@@ -366,6 +370,7 @@ class HeadlessServer:
         self._log(f"Received signal {signum}, shutting down...")
         self._running = False
         self.tunnel_mgr.stop()
+        self.live_preview.stop_all()
         for job in self.recording_jobs:
             if job.status == "recording" and job.process:
                 try:

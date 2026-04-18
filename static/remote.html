@@ -862,13 +862,11 @@
           <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
           <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">Open in VLC</button>
           <button class="btn ghost btn-sm" onclick="castLivePlayer()">Cast</button>
-          <div class="quality-group" id="quality-group">
-            <span class="qlabel">Quality</span>
-            <button class="qbtn" data-profile="auto">Auto</button>
-            <button class="qbtn" data-profile="low">Low</button>
-            <button class="qbtn" data-profile="mobile">Mobile</button>
-            <button class="qbtn" data-profile="hd">HD</button>
-            <button class="qbtn" data-profile="original">Orig</button>
+          <div class="quality-group" id="watch-mode-group">
+            <span class="qlabel">Watch</span>
+            <button class="qbtn" type="button" data-profile="live_dvr" title="Buffered on your NAS — smoothest live TV">Live DVR</button>
+            <button class="qbtn" type="button" data-profile="original" title="Direct from provider — lowest NAS load; can stutter on poor networks">Original stream</button>
+            <button class="qbtn" type="button" data-profile="data_saver" title="720p · ~2.5 Mbps — easier on cellular or slow Wi‑Fi (transcodes on NAS)">Data saver</button>
           </div>
           <span id="player-status"></span>
         </div>
@@ -1565,25 +1563,23 @@ function refreshLog(){
 
 /* ═══ PLAYER ═══ */
 let currentHls=null;
-let currentProfile=null;       // active profile: 'mobile'|'hd'|'low'|'original'
+let currentProfile=null;       // 'live_dvr' | 'original' | 'data_saver'
+let currentPreviewId=null;     // Live DVR session id for /api/preview/stop
+let currentLiveHlsUrl=null;    // for VLC when mode is Live DVR
 let currentChannelForPlayer=null;
 
-function isMobileUA(){
-  return /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(navigator.userAgent);
-}
 function resolveProfile(choice){
-  // "auto" → mobile on mobile UA, original on desktop.
-  if(choice==='auto' || !choice) return isMobileUA() ? 'mobile' : 'original';
+  if(choice==='auto' || !choice) return 'live_dvr';
   return choice;
 }
-function savedProfile(){
-  try{return localStorage.getItem('eliteQuality') || 'auto';}catch(e){return 'auto';}
+function savedWatchMode(){
+  try{return localStorage.getItem('eliteWatchMode') || 'live_dvr';}catch(e){return 'live_dvr';}
 }
-function saveProfile(p){
-  try{localStorage.setItem('eliteQuality', p);}catch(e){}
+function saveWatchMode(p){
+  try{localStorage.setItem('eliteWatchMode', p);}catch(e){}
 }
-function setActiveQualityBtn(profile){
-  document.querySelectorAll('#quality-group .qbtn').forEach(b=>{
+function setActiveWatchModeBtn(profile){
+  document.querySelectorAll('#watch-mode-group .qbtn').forEach(b=>{
     b.classList.toggle('active', b.dataset.profile===profile);
   });
 }
@@ -1592,12 +1588,21 @@ function buildStreamUrl(channelId, profile){
   if(profile==='original'){
     return {url:'/api/stream/live?channel_id='+encodeURIComponent(channelId), type:'ts'};
   }
+  if(profile==='live_dvr'){
+    return {url:'', type:'hls', liveDvr:true};
+  }
   return {
     url:'/api/stream/mobile.m3u8?channel_id='+encodeURIComponent(channelId)+'&profile='+encodeURIComponent(profile),
     type:'hls',
   };
 }
 function tearDownPlayer(){
+  if(currentPreviewId!=null){
+    const pid=currentPreviewId;
+    currentPreviewId=null;
+    currentLiveHlsUrl=null;
+    fetch('/api/preview/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:pid})}).catch(()=>{});
+  }
   const video=document.getElementById('video-player');
   if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
   if(video._visHandler){document.removeEventListener('visibilitychange',video._visHandler); video._visHandler=null;}
@@ -1612,18 +1617,26 @@ function tearDownPlayer(){
 }
 function attachStreamToVideo(video, info, status, channelName){
   const nativeHls = video.canPlayType('application/vnd.apple.mpegurl');
+  const liveDvr = info.liveDvr === true;
   if(info.type==='hls'){
     if(nativeHls){
       video.src=info.url;
       video.play().catch(()=>{status.textContent='Tap ▶ to start';});
     }else if(window.Hls && window.Hls.isSupported()){
-      currentHls=new window.Hls({
+      const cfg = liveDvr ? {
+        liveDurationInfinity:true,
+        backBufferLength:120,
+        maxBufferLength:30,
+        enableWorker:true,
+        lowLatencyMode:false,
+      } : {
         liveDurationInfinity:true,
         lowLatencyMode:false,
         backBufferLength:30,
         maxBufferLength:20,
         liveSyncDurationCount:3,
-      });
+      };
+      currentHls=new window.Hls(cfg);
       currentHls.loadSource(info.url);
       currentHls.attachMedia(video);
       currentHls.on(window.Hls.Events.MANIFEST_PARSED, ()=>{
@@ -1680,26 +1693,51 @@ function attachStreamToVideo(video, info, status, channelName){
   };
   document.addEventListener('visibilitychange', video._visHandler);
 }
-function playChannel(forceProfile){
+async function playChannel(forceProfile){
   if(!selId){toast('Select a channel first');return;}
   const video=document.getElementById('video-player');
   const panel=document.getElementById('player-panel');
   const status=document.getElementById('player-status');
 
-  const choice   = forceProfile || savedProfile();
+  const choice   = forceProfile || savedWatchMode();
   const profile  = resolveProfile(choice);
   currentProfile = profile;
   currentChannelForPlayer = {id:selId, name:selName};
-  setActiveQualityBtn(choice);
+  setActiveWatchModeBtn(choice);
 
-  const info = buildStreamUrl(selId, profile);
   panel.style.display='block';
-  status.textContent = profile==='original'
-    ? 'Loading original stream…'
-    : 'Transcoding '+profile.toUpperCase()+'… (first load ~5s)';
 
   tearDownPlayer();
   stopAllVideosExcept(video);
+
+  if(profile==='live_dvr'){
+    status.textContent='Starting Live DVR…';
+    try{
+      const res=await fetch('/api/preview/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:selId})});
+      const d=await res.json();
+      if(!d.ok){
+        status.textContent=d.error || 'Live DVR failed';
+        toast(d.error || 'Live DVR failed');
+        return;
+      }
+      currentPreviewId=d.preview_id;
+      currentLiveHlsUrl=d.live_hls_url;
+      status.textContent='Playing · '+selName;
+      attachStreamToVideo(video,{url:d.live_hls_url,type:'hls',liveDvr:true},status,selName);
+    }catch(e){
+      status.textContent='Could not start Live DVR';
+      toast(String(e));
+    }
+    return;
+  }
+
+  currentPreviewId=null;
+  currentLiveHlsUrl=null;
+  const info = buildStreamUrl(selId, profile);
+  status.textContent = profile==='original'
+    ? 'Loading original stream…'
+    : 'Transcoding (Data saver)… (first load ~5s)';
+
   attachStreamToVideo(video, info, status, selName);
 }
 function stopPlayer(){
@@ -1709,11 +1747,18 @@ function stopPlayer(){
   panel.style.display='none';
   status.textContent='';
   currentProfile=null;
+  currentPreviewId=null;
+  currentLiveHlsUrl=null;
   currentChannelForPlayer=null;
 }
 function watchLiveInVLC(){
   if(!currentChannelForPlayer) return;
-  const info = buildStreamUrl(currentChannelForPlayer.id, currentProfile || savedProfile());
+  const mode=resolveProfile(currentProfile || savedWatchMode());
+  if(mode==='live_dvr' && currentLiveHlsUrl){
+    window.location.href=vlcDeepLink(absoluteUrl(currentLiveHlsUrl), currentChannelForPlayer.name||'live');
+    return;
+  }
+  const info = buildStreamUrl(currentChannelForPlayer.id, mode);
   window.location.href = vlcDeepLink(absoluteUrl(info.url), currentChannelForPlayer.name||'live');
 }
 function castLivePlayer(){
@@ -1743,20 +1788,20 @@ function _recCast(btn){
     toast('Cast not supported on this browser');
   }
 }
-function setupQualityButtons(){
-  const group=document.getElementById('quality-group');
+function setupWatchModeButtons(){
+  const group=document.getElementById('watch-mode-group');
   if(!group) return;
   group.addEventListener('click', (e)=>{
     const btn=e.target.closest('.qbtn');
     if(!btn) return;
     const choice=btn.dataset.profile;
-    saveProfile(choice);
-    setActiveQualityBtn(choice);
+    saveWatchMode(choice);
+    setActiveWatchModeBtn(choice);
     if(currentChannelForPlayer){
       playChannel(choice);
     }
   });
-  setActiveQualityBtn(savedProfile());
+  setActiveWatchModeBtn(savedWatchMode());
 }
 
 /* ═══ RECORDINGS PANE ═══ */
@@ -2287,7 +2332,7 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 
 /* ═══ BOOT ═══ */
-setupQualityButtons();
+setupWatchModeButtons();
 refreshStatus();refreshFavs();refreshGuide();refreshRecordings();
 setInterval(refreshStatus,2000);
 setInterval(refreshFavs,20000);

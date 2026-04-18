@@ -27,10 +27,17 @@ import config
 
 
 # ── Tunable limits ──────────────────────────────────────────────────────────
-MAX_CONCURRENT_TRANSCODES = 2
-IDLE_TIMEOUT_SECS         = 25
-WARMUP_TIMEOUT_SECS       = 8     # how long to wait for the first segment
-REAPER_INTERVAL_SECS      = 5
+# Override the concurrent-transcode cap via the MAX_TRANSCODES env var
+# (set in docker-compose.yml). Default 3 — sized for Synology DS1621xs+
+# (Xeon D-1527, 4C/8T). Drop to 2 on Celeron-class NAS; raise for beefier hosts.
+try:
+    MAX_CONCURRENT_TRANSCODES = max(1, int(os.getenv("MAX_TRANSCODES", "3")))
+except ValueError:
+    MAX_CONCURRENT_TRANSCODES = 3
+
+IDLE_TIMEOUT_SECS    = 25
+WARMUP_TIMEOUT_SECS  = 10    # how long to wait for the first segment (60fps needs a beat longer)
+REAPER_INTERVAL_SECS = 5
 
 
 # ── Profiles ────────────────────────────────────────────────────────────────
@@ -40,59 +47,73 @@ def _profile_args(profile: str, encoder: str) -> list[str]:
     # Common audio: AAC stereo. 96k is plenty for voice/TV.
     audio = ["-c:a", "aac", "-b:a", "96k", "-ac", "2"]
 
+    # FPS note: ffmpeg uses -r as a MAX target. If upstream is 30fps it stays
+    # 30fps (no frame duplication at copy level). 60fps here lets sports /
+    # 50-60fps broadcasts pass through smoothly instead of being decimated.
     if profile == "hd":
         scale    = "scale=-2:720"
-        v_bitrate = "2500k"
-        v_maxrate = "2800k"
-        v_bufsize = "5000k"
-        fps       = "30"
+        v_bitrate = "3000k"
+        v_maxrate = "3400k"
+        v_bufsize = "6000k"
+        fps       = "60"
         audio     = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"]
     elif profile == "low":
         scale    = "scale=-2:360"
-        v_bitrate = "600k"
-        v_maxrate = "700k"
-        v_bufsize = "1200k"
-        fps       = "25"
+        v_bitrate = "700k"
+        v_maxrate = "800k"
+        v_bufsize = "1400k"
+        fps       = "30"
         audio     = ["-c:a", "aac", "-b:a", "64k",  "-ac", "2"]
     else:  # "mobile" (default)
         scale    = "scale=-2:480"
-        v_bitrate = "1200k"
-        v_maxrate = "1400k"
-        v_bufsize = "2400k"
-        fps       = "30"
+        v_bitrate = "1600k"
+        v_maxrate = "1800k"
+        v_bufsize = "3200k"
+        fps       = "60"
+
+    # Cap output fps at `fps` (won't upsample a 30fps source to 60) and
+    # force a keyframe every 2s so HLS segment boundaries are always on a
+    # keyframe — works identically for 30fps and 60fps sources.
+    fps_cap = ["-fpsmax", fps]
+    keyframes = ["-force_key_frames", "expr:gte(t,n_forced*2)"]
 
     # Encoder-specific flags
     if encoder == "h264_qsv":
         video = [
-            "-vf", scale, "-r", fps,
+            "-vf", scale, *fps_cap,
             "-c:v", "h264_qsv",
             "-preset", "veryfast",
             "-b:v", v_bitrate, "-maxrate", v_maxrate, "-bufsize", v_bufsize,
+            *keyframes,
         ]
     elif encoder == "h264_vaapi":
         # vaapi requires the scaling filter on the GPU; simplified here.
         video = [
             "-vf", f"format=nv12,hwupload,{scale.replace('scale', 'scale_vaapi')}",
-            "-r", fps,
+            *fps_cap,
             "-c:v", "h264_vaapi",
             "-b:v", v_bitrate, "-maxrate", v_maxrate, "-bufsize", v_bufsize,
+            *keyframes,
         ]
     elif encoder == "h264_v4l2m2m":
         video = [
-            "-vf", scale, "-r", fps,
+            "-vf", scale, *fps_cap,
             "-c:v", "h264_v4l2m2m",
             "-b:v", v_bitrate,
+            *keyframes,
         ]
     else:  # libx264 software fallback
         video = [
-            "-vf", scale, "-r", fps,
+            "-vf", scale, *fps_cap,
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-tune", "zerolatency",
-            "-profile:v", "main", "-level", "4.0",
+            "-profile:v", "main", "-level", "4.1",
             "-b:v", v_bitrate, "-maxrate", v_maxrate, "-bufsize", v_bufsize,
-            "-g", str(int(fps) * 2), "-keyint_min", str(int(fps) * 2),
+            # Large -g lets -force_key_frames dominate; disables scene-cut keyframes.
+            "-g", "240", "-keyint_min", "48",
             "-sc_threshold", "0",
+            *keyframes,
             "-x264-params", "repeat-headers=1",
         ]
 

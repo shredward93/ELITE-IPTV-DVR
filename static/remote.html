@@ -1600,6 +1600,8 @@ function buildStreamUrl(channelId, profile){
 function tearDownPlayer(){
   const video=document.getElementById('video-player');
   if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
+  if(video._visHandler){document.removeEventListener('visibilitychange',video._visHandler); video._visHandler=null;}
+  video._userPaused=false;
   try{video.pause();}catch(e){}
   if(currentHls){
     try{currentHls.destroy();}catch(e){}
@@ -1639,16 +1641,14 @@ function attachStreamToVideo(video, info, status, channelName){
           currentHls.startLoad();
         }
       });
-      // Auto-resume when the browser stalls waiting for data
+      // Stall recovery: startLoad is insufficient if server-side FFmpeg was reaped.
+      // After 7s with no progress, do a full stream restart.
       video.addEventListener('waiting', ()=>{
         if(video._stallTimer) return;
         video._stallTimer=setTimeout(()=>{
           video._stallTimer=null;
-          if(currentHls && (video.paused || video.readyState<3)){
-            currentHls.startLoad();
-            video.play().catch(()=>{});
-          }
-        }, 2500);
+          if(currentChannelForPlayer && !video._userPaused) playChannel(currentProfile);
+        }, 7000);
       });
       video.addEventListener('playing', ()=>{
         if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
@@ -1662,9 +1662,23 @@ function attachStreamToVideo(video, info, status, channelName){
     video.play().catch(()=>{status.textContent='Tap ▶ to start';});
   }
   video.onplaying=()=>{
+    video._userPaused=false;
     status.textContent='Playing'+(channelName?(' · '+channelName):'');
   };
+  video.onpause=()=>{ video._userPaused=true; };
   video.onerror=()=>{status.textContent='Stream error — try another quality';};
+  // Tab-return watchdog: mobile Chrome kills FFmpeg when backgrounded.
+  // On visibility restored, restart if stream is stalled.
+  video._visHandler=()=>{
+    if(document.visibilityState==='visible' && currentChannelForPlayer && !video._userPaused){
+      setTimeout(()=>{
+        if(video.readyState<3 || video.networkState===video.NETWORK_LOADING){
+          playChannel(currentProfile);
+        }
+      }, 1500);
+    }
+  };
+  document.addEventListener('visibilitychange', video._visHandler);
 }
 function playChannel(forceProfile){
   if(!selId){toast('Select a channel first');return;}

@@ -223,6 +223,38 @@ class _RecordingHlsCache:
                     pass
 
 
+_duration_cache: dict[tuple, float] = {}
+_duration_cache_lock = threading.Lock()
+
+
+def _probe_recording_duration(path: str) -> float | None:
+    """Return duration in seconds for a .ts recording, cached by (path, size, mtime)."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = (path, stat.st_size, int(stat.st_mtime))
+    with _duration_cache_lock:
+        if key in _duration_cache:
+            return _duration_cache[key]
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1",
+             path],
+            capture_output=True, timeout=8,
+            **config._SUBPROCESS_FLAGS,
+        )
+        out = proc.stdout.decode("utf-8", errors="replace").strip()
+        dur = float(out) if out else None
+    except Exception:
+        dur = None
+    with _duration_cache_lock:
+        _duration_cache[key] = dur
+    return dur
+
+
 class StreamMuxer:
     """
     Multi-client stream multiplexer for live TV.
@@ -1273,7 +1305,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 continue
             abs_url = f"/recordings/{fn}"
             from urllib.parse import quote as _q
-            completed.append({
+            ts_path = os.path.join(self.ctx.get_recordings_dir(), fn)
+            entry = {
                 "filename":      fn,
                 "size_bytes":    rec["size_bytes"],
                 "recorded_at":   rec["recorded_at"],
@@ -1284,7 +1317,11 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 # VLC deep links — absolute path; the client fills in the host
                 # via window.location.origin before use.
                 "vlc_path":      f"/recordings/{_q(fn)}",
-            })
+            }
+            dur = _probe_recording_duration(ts_path)
+            if dur is not None:
+                entry["duration_secs"] = dur
+            completed.append(entry)
 
         return {"active": active, "recent": recent, "completed": completed}
 

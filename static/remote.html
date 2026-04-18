@@ -273,36 +273,180 @@
   .rec-actions{display:flex; gap:6px; flex-wrap:wrap}
   .rec-actions .btn{padding:7px 11px; font-size:12px}
   .rec-actions a.btn{text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
-  .rec-inline-player{margin-top:10px; border-radius:10px; overflow:hidden; border:1px solid var(--rule); box-shadow:var(--shadow-md)}
-  .rec-video-wrap{position:relative; background:#000; line-height:0; user-select:none; -webkit-user-select:none}
-  .rec-inline-player video{width:100%; max-height:260px; background:#000; display:block}
-  .rec-inline-close{position:absolute; top:8px; right:8px; width:28px; height:28px; border-radius:50%; border:none; background:rgba(0,0,0,.75); color:#fff; font-size:14px; line-height:28px; text-align:center; cursor:pointer; padding:0; z-index:10; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px)}
-  .rec-inline-close:hover{background:rgba(255,46,77,.9)}
-  /* double-tap gesture zones */
-  .rec-tap-zone{position:absolute; top:0; bottom:0; z-index:6; display:flex; align-items:center; justify-content:center; cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation}
-  .rec-tap-left{left:0; width:35%}
-  .rec-tap-right{right:0; width:35%}
-  .rec-tap-ripple{position:absolute; width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,.2); transform:scale(0); opacity:0; pointer-events:none}
-  .rec-tap-ripple.pop{animation:tap-pop .4s ease-out forwards}
-  @keyframes tap-pop{0%{transform:scale(0);opacity:.8}100%{transform:scale(2.6);opacity:0}}
-  .rec-tap-label{position:relative; z-index:1; color:#fff; font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:0.04em; text-shadow:0 1px 6px rgba(0,0,0,.7); opacity:0; transition:opacity .15s; pointer-events:none; padding:4px 8px; background:rgba(0,0,0,.4); border-radius:6px; white-space:nowrap}
+  /* ═══ MODERN RECORDING PLAYER ═══ */
+  .rec-inline-player{
+    margin-top:10px; border-radius:12px; overflow:hidden;
+    border:1px solid var(--rule); background:#000;
+    box-shadow:var(--shadow-lg); position:relative;
+  }
+  .rec-video-wrap{
+    position:relative; background:#000; line-height:0;
+    user-select:none; -webkit-user-select:none;
+    max-height:70vh;
+  }
+  .rec-inline-player video{
+    width:100%; max-height:70vh; min-height:180px;
+    background:#000; display:block;
+  }
+  /* Tap zones */
+  .rec-tap-zone{
+    position:absolute; top:0; bottom:0; z-index:4;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  .rec-tap-left{left:0; width:30%}
+  .rec-tap-right{right:0; width:30%}
+  .rec-tap-center{left:30%; right:30%}
+  .rec-tap-ripple{
+    position:absolute; width:72px; height:72px; border-radius:50%;
+    background:rgba(255,255,255,.22); transform:scale(0); opacity:0;
+    pointer-events:none;
+  }
+  .rec-tap-ripple.pop{animation:rec-tap-pop .5s ease-out forwards}
+  @keyframes rec-tap-pop{0%{transform:scale(0);opacity:.85}100%{transform:scale(2.8);opacity:0}}
+  .rec-tap-label{
+    position:relative; z-index:1; color:#fff;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; font-weight:600; letter-spacing:0.04em;
+    text-shadow:0 1px 6px rgba(0,0,0,.8);
+    opacity:0; transition:opacity .15s;
+    pointer-events:none; padding:5px 9px;
+    background:rgba(0,0,0,.5); border-radius:8px;
+    white-space:nowrap;
+  }
   .rec-tap-zone.active .rec-tap-label{opacity:1}
-  /* player bar */
-  .rec-player-bar{background:var(--surface-2); border-top:1px solid var(--rule); padding:8px 12px 10px; display:flex; flex-direction:column; gap:7px}
-  .rec-seek-row{display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; color:var(--paper-muted)}
-  .rec-seek-row input[type=range]{flex:1; height:3px; accent-color:var(--signal); cursor:pointer}
-  .rec-seek-time{min-width:36px; text-align:right; font-variant-numeric:tabular-nums; font-size:10px}
-  .rec-seek-dur{min-width:36px; text-align:left; font-variant-numeric:tabular-nums; font-size:10px}
-  .rec-ctrl-row{display:flex; align-items:center; gap:8px}
-  .rec-ctrl-btn{background:none; border:1px solid var(--rule); color:var(--paper); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; line-height:1; transition:background .12s, border-color .12s; font-family:'Manrope',sans-serif}
-  .rec-ctrl-btn:hover{background:var(--surface-3); border-color:var(--paper-muted)}
-  .rec-ctrl-btn.play-pause{padding:7px 22px; font-size:16px; background:var(--signal); border-color:var(--signal); color:var(--ink); border-radius:10px; font-weight:700}
-  .rec-ctrl-btn.play-pause:hover{background:#ff9f5e; border-color:#ff9f5e}
+  /* Loading spinner */
+  .rec-spinner{
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    width:44px; height:44px; z-index:6; pointer-events:none;
+    opacity:0; transition:opacity .2s;
+  }
+  .rec-spinner.visible{opacity:1}
+  .rec-spinner::after{
+    content:''; display:block; width:100%; height:100%;
+    border:3px solid rgba(255,255,255,.2);
+    border-top-color:var(--signal);
+    border-radius:50%;
+    animation:rec-spin .9s linear infinite;
+  }
+  @keyframes rec-spin{to{transform:rotate(360deg)}}
+  /* Big center play button when paused */
+  .rec-center-play{
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    width:66px; height:66px; border-radius:50%;
+    background:rgba(0,0,0,.55); color:#fff;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    font-size:24px; border:none; cursor:pointer;
+    display:none; align-items:center; justify-content:center;
+    z-index:7; padding:0; line-height:1;
+    transition:background .15s, transform .15s;
+  }
+  .rec-center-play:hover{background:rgba(0,0,0,.75); transform:translate(-50%,-50%) scale(1.08)}
+  .rec-inline-player.paused .rec-center-play{display:flex}
+  /* Top overlay (close button) */
+  .rec-overlay-top{
+    position:absolute; top:0; left:0; right:0; z-index:8;
+    padding:10px 12px;
+    background:linear-gradient(180deg, rgba(0,0,0,.55), transparent);
+    display:flex; justify-content:flex-end;
+    opacity:0; transition:opacity .25s;
+    pointer-events:none;
+  }
+  .rec-inline-player.controls-visible .rec-overlay-top{opacity:1; pointer-events:auto}
+  .rec-inline-close{
+    width:32px; height:32px; border-radius:50%; border:none;
+    background:rgba(0,0,0,.6); color:#fff;
+    font-size:14px; cursor:pointer; padding:0;
+    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+    transition:background .15s;
+  }
+  .rec-inline-close:hover{background:rgba(255,46,77,.9)}
+  /* Bottom controls bar */
+  .rec-player-bar{
+    position:absolute; bottom:0; left:0; right:0; z-index:8;
+    padding:24px 14px 10px;
+    background:linear-gradient(0deg, rgba(0,0,0,.92), rgba(0,0,0,.5) 55%, transparent);
+    display:flex; flex-direction:column; gap:3px;
+    opacity:0; transition:opacity .25s;
+    pointer-events:none;
+  }
+  .rec-inline-player.controls-visible .rec-player-bar{opacity:1; pointer-events:auto}
+  /* Seek bar */
+  .rec-seek-wrap{
+    position:relative; height:18px; display:flex; align-items:center;
+    cursor:pointer; margin:0 2px;
+  }
+  .rec-seek-bg,.rec-seek-buffered,.rec-seek-played{
+    position:absolute; left:0; height:4px; border-radius:2px;
+    pointer-events:none; top:50%; transform:translateY(-50%);
+  }
+  .rec-seek-bg{right:0; background:rgba(255,255,255,.2)}
+  .rec-seek-buffered{background:rgba(255,255,255,.38); width:0}
+  .rec-seek-played{background:var(--signal); width:0; box-shadow:0 0 6px rgba(255,140,66,.35)}
+  .rec-seek-wrap input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    position:relative; z-index:2;
+    width:100%; height:18px; background:transparent;
+    outline:none; margin:0; padding:0; cursor:pointer;
+  }
+  .rec-seek-wrap input[type=range]::-webkit-slider-runnable-track{background:transparent; height:18px; border:none}
+  .rec-seek-wrap input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:14px; height:14px; border-radius:50%;
+    background:var(--signal); border:2px solid #fff;
+    margin-top:2px; cursor:pointer;
+    box-shadow:0 0 10px rgba(255,140,66,.5);
+    transform:scale(.7); transition:transform .15s;
+  }
+  .rec-seek-wrap:hover input[type=range]::-webkit-slider-thumb,
+  .rec-seek-wrap.dragging input[type=range]::-webkit-slider-thumb{transform:scale(1)}
+  .rec-seek-wrap input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--signal); border:2px solid #fff;
+    cursor:pointer; box-shadow:0 0 10px rgba(255,140,66,.5);
+  }
+  .rec-seek-wrap input[type=range]::-moz-range-track{background:transparent; height:18px; border:none}
+  /* Time row */
+  .rec-time-row{
+    display:flex; justify-content:space-between;
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+    color:rgba(255,255,255,.8);
+    font-variant-numeric:tabular-nums;
+    padding:2px 4px 0;
+  }
+  .rec-time-row.live-mode .rec-seek-dur::before{
+    content:'● '; color:var(--live);
+  }
+  /* Control row */
+  .rec-ctrl-row{display:flex; align-items:center; gap:2px; padding-top:2px}
+  .rec-ctrl-btn{
+    background:none; border:none; color:#fff;
+    width:38px; height:38px; border-radius:8px;
+    font-size:15px; cursor:pointer; line-height:1;
+    transition:background .12s;
+    display:flex; align-items:center; justify-content:center;
+    padding:0; font-family:inherit;
+  }
+  .rec-ctrl-btn:hover{background:rgba(255,255,255,.14)}
+  .rec-ctrl-btn.play-pause{width:44px; height:44px; font-size:20px}
   .rec-ctrl-spacer{flex:1}
-  .rec-ctrl-btn.rec-pip-btn,.rec-ctrl-btn.rec-fs-btn{padding:6px 10px; font-size:15px}
-  /* fullscreen overrides */
-  .rec-inline-player:fullscreen video,.rec-inline-player:-webkit-full-screen video{max-height:100vh}
-  .rec-inline-player:fullscreen .rec-player-bar,.rec-inline-player:-webkit-full-screen .rec-player-bar{position:absolute; bottom:0; left:0; right:0; background:rgba(10,10,12,.85); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px)}
+  /* Fullscreen */
+  .rec-inline-player:fullscreen,
+  .rec-inline-player:-webkit-full-screen{
+    border-radius:0; border:0; background:#000;
+    width:100vw; height:100vh;
+  }
+  .rec-inline-player:fullscreen .rec-video-wrap,
+  .rec-inline-player:-webkit-full-screen .rec-video-wrap{
+    max-height:100vh; height:100%;
+  }
+  .rec-inline-player:fullscreen video,
+  .rec-inline-player:-webkit-full-screen video{
+    max-height:100vh; height:100%; object-fit:contain;
+  }
 
   /* EPG (selected channel) */
   #epg-panel{border-top:1px solid var(--rule); padding-top:14px; margin-top:4px}
@@ -1620,15 +1764,35 @@ function absoluteUrl(path){
   try{return new URL(path, window.location.origin).toString();}
   catch(e){return path;}
 }
+function _fmtTime(s){
+  if(!isFinite(s)||s<0) return '0:00';
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60);
+  const pad=n=>(n<10?'0':'')+n;
+  return h>0 ? h+':'+pad(m)+':'+pad(ss) : m+':'+pad(ss);
+}
 function _recTogglePlay(btn){
   const v=btn.closest('.rec-inline-player').querySelector('video');
   if(!v) return;
-  v.paused ? v.play() : v.pause();
+  v.paused ? v.play().catch(()=>{}) : v.pause();
 }
 function _recSkip(btn, secs){
   const v=btn.closest('.rec-inline-player').querySelector('video');
   if(!v) return;
-  v.currentTime=Math.max(0, Math.min(v.duration||0, v.currentTime+secs));
+  const dur=_recPlayableDuration(v);
+  v.currentTime=Math.max(0, Math.min(dur, v.currentTime+secs));
+}
+function _recPlayableDuration(v){
+  // Use the holder's known duration (from rec metadata) if the video
+  // element still reports Infinity/NaN because the HLS playlist is mid-remux.
+  const holder=v.closest('.rec-inline-player');
+  const known=holder&&holder._duration;
+  if(known&&isFinite(known)) return known;
+  if(isFinite(v.duration)&&v.duration>0) return v.duration;
+  // Fall back to last seekable range end (what hls.js has loaded so far).
+  try{
+    if(v.seekable&&v.seekable.length) return v.seekable.end(v.seekable.length-1);
+  }catch(e){}
+  return 0;
 }
 function closeInlinePlayer(cardId){
   const card=document.getElementById(cardId);
@@ -1641,6 +1805,8 @@ function closeInlinePlayer(cardId){
     if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
     try{video.removeAttribute('src'); video.load();}catch(e){}
   }
+  if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
+  if(holder._keyHandler){document.removeEventListener('keydown',holder._keyHandler);}
   if(document.fullscreenElement===holder) document.exitFullscreen().catch(()=>{});
   holder.remove();
 }
@@ -1662,104 +1828,291 @@ function _recFullscreen(btn){
     (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document).catch(()=>{});
   }
 }
-function playRecordingInline(kind, src, cardId){
-  // kind: 'hls' for in-progress (live playlist) or completed-remuxed HLS,
-  //        'ts' for direct .ts file.
+function _recShowControls(holder, autoHide){
+  holder.classList.add('controls-visible');
+  if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
+  if(autoHide){
+    const v=holder.querySelector('video');
+    holder._hideTimer=setTimeout(()=>{
+      if(v && !v.paused) holder.classList.remove('controls-visible');
+    }, 3200);
+  }
+}
+function playRecordingInline(kind, src, cardId, opts){
+  // kind: 'hls' for in-progress live playlist or completed-remuxed HLS;
+  //        'ts'  for direct .ts file.
+  // opts: { duration?: number, isLive?: boolean }
+  opts = opts || {};
   const card=document.getElementById(cardId);
   if(!card) return;
   let holder=card.querySelector('.rec-inline-player');
   if(!holder){
     holder=document.createElement('div');
-    holder.className='rec-inline-player';
+    holder.className='rec-inline-player paused';
     const _pipBtn = document.pictureInPictureEnabled
-      ? '<button class="rec-ctrl-btn rec-pip-btn" title="Picture in Picture" onclick="_recPip(this)">⧉</button>'
+      ? '<button class="rec-ctrl-btn" title="Picture in Picture" onclick="_recPip(this)">⧉</button>'
       : '';
     holder.innerHTML =
       '<div class="rec-video-wrap">'
-      + '<button class="rec-inline-close" title="Close" onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
+      + '<video autoplay playsinline webkit-playsinline></video>'
+      + '<div class="rec-spinner"></div>'
       + '<div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">⏪ 10s</span></div>'
+      + '<div class="rec-tap-zone rec-tap-center"></div>'
       + '<div class="rec-tap-zone rec-tap-right"><div class="rec-tap-ripple"></div><span class="rec-tap-label">10s ⏩</span></div>'
-      + '<video autoplay playsinline></video>'
+      + '<button class="rec-center-play" title="Play" aria-label="Play">▶</button>'
+      + '<div class="rec-overlay-top">'
+      +   '<button class="rec-inline-close" title="Close" onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
       + '</div>'
       + '<div class="rec-player-bar">'
-      +   '<div class="rec-seek-row">'
+      +   '<div class="rec-seek-wrap">'
+      +     '<div class="rec-seek-bg"></div>'
+      +     '<div class="rec-seek-buffered"></div>'
+      +     '<div class="rec-seek-played"></div>'
+      +     '<input type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">'
+      +   '</div>'
+      +   '<div class="rec-time-row">'
       +     '<span class="rec-seek-time">0:00</span>'
-      +     '<input type="range" min="0" max="100" step="0.1" value="0">'
       +     '<span class="rec-seek-dur">0:00</span>'
       +   '</div>'
       +   '<div class="rec-ctrl-row">'
-      +     '<button class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">⏪ 10</button>'
-      +     '<button class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)">⏸</button>'
-      +     '<button class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">10 ⏩</button>'
+      +     '<button class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)" title="Play/Pause">⏸</button>'
+      +     '<button class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">⏪</button>'
+      +     '<button class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">⏩</button>'
       +     '<span class="rec-ctrl-spacer"></span>'
       +     _pipBtn
-      +     '<button class="rec-ctrl-btn rec-fs-btn" title="Fullscreen" onclick="_recFullscreen(this)">⛶</button>'
+      +     '<button class="rec-ctrl-btn" title="Fullscreen" onclick="_recFullscreen(this)">⛶</button>'
       +   '</div>'
       + '</div>';
     card.appendChild(holder);
-    // Wire seek bar
-    const seek=holder.querySelector('input[type=range]');
-    const timeEl=holder.querySelector('.rec-seek-time');
-    const durEl=holder.querySelector('.rec-seek-dur');
-    const ppBtn=holder.querySelector('.play-pause');
-    const vid=holder.querySelector('video');
-    function _fmtS(s){const m=Math.floor(s/60),ss=Math.floor(s%60);return m+':'+(ss<10?'0':'')+ss;}
-    vid.addEventListener('timeupdate',()=>{
-      if(!seek._dragging){seek.value=vid.duration?vid.currentTime/vid.duration*100:0;}
-      timeEl.textContent=_fmtS(vid.currentTime||0);
+
+    const vid      = holder.querySelector('video');
+    const seek     = holder.querySelector('input[type=range]');
+    const seekWrap = holder.querySelector('.rec-seek-wrap');
+    const timeEl   = holder.querySelector('.rec-seek-time');
+    const durEl    = holder.querySelector('.rec-seek-dur');
+    const timeRow  = holder.querySelector('.rec-time-row');
+    const bufEl    = holder.querySelector('.rec-seek-buffered');
+    const playedEl = holder.querySelector('.rec-seek-played');
+    const ppBtn    = holder.querySelector('.play-pause');
+    const centerPlay = holder.querySelector('.rec-center-play');
+    const spinner  = holder.querySelector('.rec-spinner');
+
+    function _updateBars(){
+      const dur = _recPlayableDuration(vid);
+      if(dur>0){
+        const pct = Math.min(100, (vid.currentTime/dur)*100);
+        playedEl.style.width = pct+'%';
+        if(!seek._dragging){ seek.value = Math.round(pct*10); }
+        // Buffered range
+        try{
+          if(vid.buffered && vid.buffered.length){
+            const end = vid.buffered.end(vid.buffered.length-1);
+            bufEl.style.width = Math.min(100, (end/dur)*100)+'%';
+          }
+        }catch(e){}
+      } else {
+        playedEl.style.width='0%';
+        bufEl.style.width='0%';
+      }
+      timeEl.textContent = _fmtTime(vid.currentTime||0);
+    }
+    vid.addEventListener('timeupdate', _updateBars);
+    vid.addEventListener('progress', _updateBars);
+    vid.addEventListener('durationchange', ()=>{
+      const dur = _recPlayableDuration(vid);
+      durEl.textContent = dur>0 ? _fmtTime(dur) : (holder._isLive?'LIVE':'0:00');
     });
-    vid.addEventListener('durationchange',()=>{ durEl.textContent=isFinite(vid.duration)?_fmtS(vid.duration):'Live'; });
-    vid.addEventListener('play',()=>{ ppBtn.textContent='⏸'; });
-    vid.addEventListener('pause',()=>{ ppBtn.textContent='▶'; });
-    seek.addEventListener('mousedown',()=>{seek._dragging=true;});
-    seek.addEventListener('touchstart',()=>{seek._dragging=true;},{passive:true});
-    seek.addEventListener('input',()=>{ if(vid.duration) vid.currentTime=seek.value/100*vid.duration; });
-    seek.addEventListener('change',()=>{ seek._dragging=false; });
-    // Double-tap zones: left = -10s, right = +10s
+    vid.addEventListener('play', ()=>{
+      ppBtn.textContent='⏸'; holder.classList.remove('paused');
+      _recShowControls(holder, true);
+    });
+    vid.addEventListener('pause', ()=>{
+      ppBtn.textContent='▶'; holder.classList.add('paused');
+      _recShowControls(holder, false);
+    });
+    vid.addEventListener('waiting', ()=>spinner.classList.add('visible'));
+    vid.addEventListener('playing', ()=>spinner.classList.remove('visible'));
+    vid.addEventListener('canplay', ()=>spinner.classList.remove('visible'));
+    vid.addEventListener('ended',   ()=>{ holder.classList.add('paused'); _recShowControls(holder, false); });
+
+    centerPlay.addEventListener('click', e=>{
+      e.stopPropagation();
+      vid.paused ? vid.play().catch(()=>{}) : vid.pause();
+    });
+
+    // Seek bar interactions
+    function _seekTo(pctMille){
+      const dur = _recPlayableDuration(vid);
+      if(dur<=0) return;
+      vid.currentTime = Math.max(0, Math.min(dur, (pctMille/1000)*dur));
+    }
+    seek.addEventListener('mousedown', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');});
+    seek.addEventListener('touchstart', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');}, {passive:true});
+    seek.addEventListener('input', ()=>{
+      const dur = _recPlayableDuration(vid);
+      if(dur>0){
+        const pct = seek.value/1000;
+        playedEl.style.width = (pct*100)+'%';
+        timeEl.textContent = _fmtTime(pct*dur);
+      }
+    });
+    seek.addEventListener('change', ()=>{ _seekTo(parseFloat(seek.value)); seek._dragging=false; seekWrap.classList.remove('dragging'); });
+    seek.addEventListener('mouseup',  ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
+    seek.addEventListener('touchend', ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
+
+    // Double-tap zones (left = -10s, right = +10s, center = toggle controls/play)
     holder.querySelectorAll('.rec-tap-zone').forEach(zone=>{
       let lastTap=0;
-      zone.addEventListener('click',e=>{
+      zone.addEventListener('click', e=>{
         e.stopPropagation();
         const now=Date.now(), dt=now-lastTap; lastTap=now;
-        if(dt<320){
-          const delta=zone.classList.contains('rec-tap-left')?-10:10;
-          if(vid) vid.currentTime=Math.max(0,Math.min(vid.duration||0,vid.currentTime+delta));
-          const rip=zone.querySelector('.rec-tap-ripple');
+        const isCenter = zone.classList.contains('rec-tap-center');
+        if(dt<320 && !isCenter){
+          const delta = zone.classList.contains('rec-tap-left') ? -10 : 10;
+          const dur = _recPlayableDuration(vid);
+          vid.currentTime = Math.max(0, Math.min(dur, vid.currentTime+delta));
+          const rip = zone.querySelector('.rec-tap-ripple');
           if(rip){rip.classList.remove('pop'); void rip.offsetWidth; rip.classList.add('pop');}
           zone.classList.add('active');
-          setTimeout(()=>zone.classList.remove('active'),700);
+          setTimeout(()=>zone.classList.remove('active'), 700);
+          _recShowControls(holder, !vid.paused);
+        } else if(isCenter){
+          // Single tap on center: toggle controls visibility.
+          // Double tap on center: play/pause toggle.
+          if(dt<320){
+            vid.paused ? vid.play().catch(()=>{}) : vid.pause();
+          } else {
+            if(holder.classList.contains('controls-visible')){
+              holder.classList.remove('controls-visible');
+              if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
+            } else {
+              _recShowControls(holder, !vid.paused);
+            }
+          }
+        } else {
+          _recShowControls(holder, !vid.paused);
         }
       });
     });
+
+    // Keyboard shortcuts while player is hovered/focused
+    const keyHandler = e=>{
+      if(!document.body.contains(holder)) return;
+      const active = document.activeElement;
+      if(active && active.tagName==='INPUT' && active.type!=='range') return;
+      const fs = document.fullscreenElement===holder;
+      const hovered = holder.matches(':hover');
+      if(!fs && !hovered) return;
+      switch(e.key){
+        case ' ': case 'k':
+          e.preventDefault(); vid.paused?vid.play().catch(()=>{}):vid.pause(); break;
+        case 'ArrowLeft': case 'j':
+          e.preventDefault(); vid.currentTime = Math.max(0, vid.currentTime-10);
+          _recShowControls(holder, !vid.paused); break;
+        case 'ArrowRight': case 'l':
+          e.preventDefault();
+          vid.currentTime = Math.min(_recPlayableDuration(vid), vid.currentTime+10);
+          _recShowControls(holder, !vid.paused); break;
+        case 'f':
+          e.preventDefault(); _recFullscreen(holder.querySelector('.rec-ctrl-btn')); break;
+        case 'm':
+          e.preventDefault(); vid.muted = !vid.muted; break;
+        case 'Escape':
+          if(fs) document.exitFullscreen().catch(()=>{});
+          break;
+      }
+    };
+    document.addEventListener('keydown', keyHandler);
+    holder._keyHandler = keyHandler;
+
+    // Show controls on any mouse movement / touch
+    holder.addEventListener('mousemove', ()=>_recShowControls(holder, !vid.paused));
+    holder.addEventListener('touchstart', ()=>_recShowControls(holder, !vid.paused), {passive:true});
   }
+
   const video=holder.querySelector('video');
+  const spinner=holder.querySelector('.rec-spinner');
+  // Store per-holder context so helpers (_recPlayableDuration, time UI) work
+  // even when the HLS playlist hasn't announced a duration yet.
+  holder._isLive = !!opts.isLive;
+  if(opts.duration && isFinite(opts.duration) && opts.duration>0){
+    holder._duration = opts.duration;
+    const durEl = holder.querySelector('.rec-seek-dur');
+    if(durEl) durEl.textContent = _fmtTime(opts.duration);
+  } else {
+    holder._duration = null;
+  }
+  const timeRow = holder.querySelector('.rec-time-row');
+  if(timeRow) timeRow.classList.toggle('live-mode', holder._isLive);
+
   // One-video-at-a-time: pause every other <video> on the page first.
   stopAllVideosExcept(video);
-  // Tear down any previous inline HLS instance on this card
   if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
+
   const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
-  // Completed recordings stream from a progressive event-type playlist —
-  // force start at 0 so hls.js doesn't drop the user at the encoder's
-  // current tail. Live in-progress recordings keep the default (live-edge)
-  // entry point so the viewer sees "now" and can scrub back.
   const isCompletedRec = typeof src==='string' && src.indexOf('/api/recordings/hls/')===0;
+
+  spinner.classList.add('visible');
+
   if(kind==='hls'){
-    if(nativeHls){ video.src=src; }
-    else if(window.Hls && window.Hls.isSupported()){
-      const h=new window.Hls({
-        liveDurationInfinity:true,
-        backBufferLength:Infinity,
-        startPosition: isCompletedRec ? 0 : -1,
-      });
+    if(nativeHls){
+      video.src=src;
+      // For native HLS (Safari/iOS), force start at 0 on completed recordings
+      // so we don't land at the encoder's growing tail.
+      if(isCompletedRec){
+        video.addEventListener('loadedmetadata', ()=>{ try{ video.currentTime=0; }catch(e){} }, {once:true});
+      }
+    } else if(window.Hls && window.Hls.isSupported()){
+      // CRITICAL FIX: the previous config used liveDurationInfinity+backBufferLength=Infinity
+      // which forced video.duration → Infinity and broke scrubbing.
+      // Completed recordings are VOD even while remux is in progress — use the default
+      // (non-live) config so seeking, timecode, and duration all work.
+      const cfg = isCompletedRec
+        ? {
+            // VOD config. Let hls.js manage its own buffer.
+            maxBufferLength: 30,
+            maxMaxBufferLength: 300,
+            maxBufferSize: 120 * 1024 * 1024,
+            startPosition: 0,
+            enableWorker: true,
+            lowLatencyMode: false,
+          }
+        : {
+            // Live (in-progress recording) config.
+            liveDurationInfinity: true,
+            backBufferLength: 120,
+            maxBufferLength: 30,
+            enableWorker: true,
+            lowLatencyMode: false,
+          };
+      const h = new window.Hls(cfg);
       h.loadSource(src); h.attachMedia(video);
+      h.on(window.Hls.Events.MANIFEST_PARSED, ()=>{ video.play().catch(()=>{}); });
+      h.on(window.Hls.Events.LEVEL_LOADED, (_, data)=>{
+        // Prefer the playlist-reported duration once we have it.
+        if(data && data.details && isFinite(data.details.totalduration) && data.details.totalduration>0){
+          if(!holder._duration || !isFinite(holder._duration)){
+            holder._duration = data.details.totalduration;
+            const durEl = holder.querySelector('.rec-seek-dur');
+            if(durEl) durEl.textContent = _fmtTime(data.details.totalduration);
+          }
+        }
+      });
+      h.on(window.Hls.Events.ERROR, (_, data)=>{
+        if(data && data.fatal){
+          if(data.type==='networkError') h.startLoad();
+          else if(data.type==='mediaError') h.recoverMediaError();
+        }
+      });
       video._hls=h;
-    }else{
-      video.src=src; // best effort
+    } else {
+      video.src=src;
     }
-  }else{
+  } else {
     video.src=src;
   }
   video.play().catch(()=>{});
+  _recShowControls(holder, false);
 }
 function renderActiveRec(r, i){
   const id='rec-active-'+i;
@@ -1776,13 +2129,13 @@ function renderActiveRec(r, i){
       </div>
       ${meta?`<div class="rec-meta">${esc(meta)}</div>`:''}
       <div class="rec-actions">
-        ${hasLive?`<button class="btn primary btn-sm" onclick="playRecordingInline('hls','${esc(r.live_hls_url)}','${id}')">▶  Watch Live</button>`:''}
+        ${hasLive?`<button class="btn primary btn-sm" onclick="playRecordingInline('hls','${esc(r.live_hls_url)}','${id}',{isLive:true})">▶  Watch Live</button>`:''}
         ${vlcLive?`<a class="btn ghost btn-sm" href="${esc(vlcLive)}">Open in VLC</a>`:''}
         ${r.stoppable!==false?`<button class="btn danger btn-sm" onclick="stopJob(${r.index})">■  Stop</button>`:''}
       </div>
     </div>`;
 }
-function startRecordingPlay(hlsUrl, tsUrl, cardId){
+function startRecordingPlay(hlsUrl, tsUrl, cardId, duration){
   // Show a "Converting…" status while the server remuxes .ts → HLS.
   // The fetch blocks server-side until done; second play is instant (cached).
   const card=document.getElementById(cardId);
@@ -1803,7 +2156,7 @@ function startRecordingPlay(hlsUrl, tsUrl, cardId){
     .then(r=>{
       if(!r.ok) throw new Error('remux failed: '+r.status);
       statusEl.textContent='';
-      playRecordingInline('hls', hlsUrl, cardId);
+      playRecordingInline('hls', hlsUrl, cardId, {duration: duration});
     })
     .catch(err=>{
       statusEl.textContent='Convert failed — try Download instead ('+err.message+')';
@@ -1824,14 +2177,16 @@ function renderCompletedRec(r, i){
   const abs=absoluteUrl(r.ts_url);
   const vlc=vlcDeepLink(abs, r.filename||'recording');
   const hlsUrl=r.hls_url||null;
+  const dur = r.duration_secs||0;
+  const metaDur = dur>0 ? ' · '+_fmtTime(dur) : '';
   return `
     <div class="rec-card" id="${id}">
       <div class="rec-card-head">
         <span class="rec-card-name">${esc(r.filename)}</span>
       </div>
-      <div class="rec-meta">${esc(fmtDate(r.recorded_at))} · ${esc(fmtBytes(r.size_bytes))}</div>
+      <div class="rec-meta">${esc(fmtDate(r.recorded_at))} · ${esc(fmtBytes(r.size_bytes))}${esc(metaDur)}</div>
       <div class="rec-actions">
-        ${hlsUrl?`<button class="btn primary btn-sm" onclick="startRecordingPlay('${esc(hlsUrl)}','${esc(r.ts_url)}','${id}')">▶  Play</button>`:''}
+        ${hlsUrl?`<button class="btn primary btn-sm" onclick="startRecordingPlay('${esc(hlsUrl)}','${esc(r.ts_url)}','${id}',${dur||'null'})">▶  Play</button>`:''}
         <a class="btn ghost btn-sm" href="${esc(vlc)}">Open in VLC</a>
         <a class="btn ghost btn-sm" href="${esc(r.download_url)}" download>⤓  Download</a>
         <button class="btn danger btn-sm" onclick="deleteRecording('${escAttr(r.filename)}')">🗑 Delete</button>

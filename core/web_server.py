@@ -1293,7 +1293,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
                         entry["elapsed_secs"]   = elapsed
                         entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
                         entry["started_at"]     = job.actual_start.isoformat()
-                    entry["duration_secs"] = job_duration_secs(job)
+                    entry["duration_secs"]    = job_duration_secs(job)
+                    if getattr(job, "start_time", None):
+                        entry["scheduled_start"] = job.start_time.isoformat()
+                        entry["scheduled_end"]   = (
+                            job.start_time + datetime.timedelta(seconds=job_duration_secs(job))
+                        ).isoformat()
                     if job.output_file:
                         fn = os.path.basename(job.output_file)
                         entry["output_file"] = fn

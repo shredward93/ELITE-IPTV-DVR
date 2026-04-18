@@ -2353,18 +2353,34 @@ function playRecordingInline(kind, src, cardId, opts){
   video.play().catch(()=>{});
   _recShowControls(holder, false);
 }
+function _fmtScheduleTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d)) return '';
+  return d.toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
 function renderActiveRec(r, i){
   const id='rec-active-'+i;
-  const elapsed = r.elapsed_secs!=null ? fmtDuration(r.elapsed_secs)+' elapsed' : '';
-  const remaining = r.remaining_secs!=null ? fmtDuration(r.remaining_secs)+' remaining' : '';
-  const meta = [elapsed, remaining].filter(Boolean).join(' · ');
+  const isWaiting = r.status === 'waiting';
+  let meta = '';
+  if(isWaiting && r.scheduled_start){
+    const start = _fmtScheduleTime(r.scheduled_start);
+    const end   = _fmtScheduleTime(r.scheduled_end);
+    const dur   = r.duration_secs ? ' · '+fmtDuration(r.duration_secs) : '';
+    meta = start + (end ? ' → ' + end.replace(/.*,\s*/,'') : '') + dur;
+  } else {
+    const elapsed   = r.elapsed_secs!=null   ? fmtDuration(r.elapsed_secs)+' elapsed'    : '';
+    const remaining = r.remaining_secs!=null ? fmtDuration(r.remaining_secs)+' remaining' : '';
+    meta = [elapsed, remaining].filter(Boolean).join(' · ');
+  }
   const hasLive = !!r.live_hls_url;
   const vlcLive = hasLive ? vlcDeepLink(absoluteUrl(r.live_hls_url), r.channel_name||'live') : null;
+  const badge = isWaiting ? 'QUEUED' : 'REC';
   return `
     <div class="rec-card live" id="${id}">
       <div class="rec-card-head">
         <span class="rec-card-name">${esc(r.channel_name)}</span>
-        <span class="rec-live-badge">REC</span>
+        <span class="rec-live-badge">${badge}</span>
       </div>
       ${meta?`<div class="rec-meta">${esc(meta)}</div>`:''}
       <div class="rec-actions">

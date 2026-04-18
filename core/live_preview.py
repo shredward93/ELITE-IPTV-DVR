@@ -55,6 +55,8 @@ class LivePreviewSession:
         playlist = os.path.join(self.live_dir, "playlist.m3u8")
         seg_pat = os.path.join(self.live_dir, "seg_%06d.ts")
 
+        # Video copy + AAC audio so browser HLS playback gets audible stereo (many
+        # IPTV feeds use AC-3/MP2 which HTML5 often won't decode inside HLS).
         cmd = [
             "ffmpeg",
             "-y",
@@ -70,8 +72,20 @@ class LivePreviewSession:
             "15000000",
             "-i",
             stream_url,
-            "-c",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-c:v",
             "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-ac",
+            "2",
+            "-ar",
+            "48000",
             "-f",
             "hls",
             "-hls_time",

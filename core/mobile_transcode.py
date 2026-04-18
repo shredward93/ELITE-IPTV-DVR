@@ -36,7 +36,11 @@ except ValueError:
     MAX_CONCURRENT_TRANSCODES = 3
 
 IDLE_TIMEOUT_SECS    = 25
-WARMUP_TIMEOUT_SECS  = 10    # how long to wait for the first segment (60fps needs a beat longer)
+# How long we'll wait for the first segment to appear before giving up.
+# With temp_file flag, a segment only becomes visible after full close, so
+# worst case = startup + 1×segment_duration + encode_time ≈ 6-8s on a
+# cold HD/60fps session. 15s gives comfortable headroom.
+WARMUP_TIMEOUT_SECS  = 15
 REAPER_INTERVAL_SECS = 5
 
 
@@ -281,7 +285,9 @@ class MobileTranscodeManager:
             return sess
 
     def wait_for_playlist(self, sess: _Session) -> bool:
-        """Block up to WARMUP_TIMEOUT_SECS for the first segment to exist."""
+        """Block up to WARMUP_TIMEOUT_SECS for the first segment to exist.
+        On timeout or ffmpeg death, log the ffmpeg stderr tail so we can see
+        *why* playback isn't starting (slow encode, bad codec flag, etc)."""
         pl = os.path.join(sess.dir, "index.m3u8")
         deadline = time.time() + WARMUP_TIMEOUT_SECS
         while time.time() < deadline:
@@ -289,9 +295,17 @@ class MobileTranscodeManager:
                 sess.ready = True
                 return True
             if sess.process and sess.process.poll() is not None:
+                rc = sess.process.returncode
+                tail = self._tail_ffmpeg_log(sess)
+                print(f"[MobileTranscode] {sess.channel_id}|{sess.profile} ffmpeg died during warmup rc={rc}\n--- ffmpeg tail ---\n{tail}\n--- end ---")
                 return False
             time.sleep(0.25)
-        return os.path.exists(pl) and self._has_any_segment(sess.dir)
+        # Timed out without a segment. Dump ffmpeg progress so user sees why.
+        tail = self._tail_ffmpeg_log(sess, nbytes=1200)
+        has_pl  = os.path.exists(pl)
+        has_seg = self._has_any_segment(sess.dir)
+        print(f"[MobileTranscode] {sess.channel_id}|{sess.profile} warmup TIMEOUT after {WARMUP_TIMEOUT_SECS}s playlist={has_pl} segment={has_seg}\n--- ffmpeg tail ---\n{tail}\n--- end ---")
+        return has_pl and has_seg
 
     def touch(self, channel_id: str, profile: str) -> None:
         """Bump last_access — called on every segment request."""
@@ -323,8 +337,12 @@ class MobileTranscodeManager:
         hls_args = [
             "-f", "hls",
             "-hls_time", "2",
-            "-hls_list_size", "6",
-            "-hls_flags", "delete_segments+omit_endlist+independent_segments",
+            "-hls_list_size", "8",
+            # temp_file: write to seg_*.ts.tmp and atomically rename on close,
+            #   so clients never fetch a half-written segment (was causing
+            #   decoder errors for larger HD segments on mobile browsers).
+            # program_date_time: helps hls.js stay aligned on live streams.
+            "-hls_flags", "delete_segments+omit_endlist+independent_segments+temp_file+program_date_time",
             "-hls_segment_type", "mpegts",
             "-hls_segment_filename", seg_pattern,
             playlist,

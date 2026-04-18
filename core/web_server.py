@@ -8,6 +8,7 @@ through a WebContext object set before the server starts.
 import datetime
 import glob
 import json
+import math
 import os
 import re
 import shutil
@@ -731,7 +732,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if not os.path.exists(file_path):
                 self._error(404, "file not found")
                 return
-            self._serve_file_range(file_path)
+            self._serve_file_range(file_path, cors=True)
 
         else:
             self.send_response(404)
@@ -880,7 +881,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"error": message}).encode())
 
-    def _serve_file_range(self, path: str, content_type: str = "video/mp2t") -> None:
+    def _serve_file_range(self, path: str, content_type: str = "video/mp2t", cors: bool = False) -> None:
         """Serve a file with full HTTP range-request support (required for ExoPlayer)."""
         try:
             file_size = os.path.getsize(path)
@@ -896,6 +897,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(file_size))
             self.send_header("Accept-Ranges", "bytes")
+            if cors:
+                self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             try:
                 with open(path, "rb") as f:
@@ -929,6 +932,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
         self.send_header("Accept-Ranges", "bytes")
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         try:
             with open(path, "rb") as f:
@@ -1150,15 +1155,16 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _serve_recording_hls(self, path: str) -> None:
         """
-        Serve a completed recording as HLS, progressively — ffmpeg runs in
-        the background and playback starts as soon as segment 0 is written,
-        not after the whole file is re-encoded.
+        Serve a completed recording as an instant byterange VOD HLS playlist.
+
+        No re-encoding: the original .ts file is referenced directly via
+        #EXT-X-BYTERANGE so the player can seek anywhere immediately.
+        Duration comes from the probe cache (fast, ~1s on first access).
 
         URL structure:
           /api/recordings/hls/<url-encoded-filename>/index.m3u8
-          /api/recordings/hls/<url-encoded-filename>/seg_NNNNN.ts
         """
-        stripped = path[len("/api/recordings/hls/"):]   # "filename/leaf"
+        stripped = path[len("/api/recordings/hls/"):]
         slash    = stripped.rfind("/")
         if slash < 0:
             self._error(400, "Bad path"); return
@@ -1169,8 +1175,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self._error(400, "Bad path"); return
         if ".." in filename or "/" in filename or "\\" in filename:
             self._error(400, "Invalid filename"); return
-        # Leaf must be the playlist or a numbered segment — no path traversal.
-        if leaf != "index.m3u8" and not re.match(r"^seg_\d+\.ts$", leaf):
+        if leaf != "index.m3u8":
             self._error(400, "Invalid leaf"); return
 
         rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
@@ -1181,71 +1186,62 @@ class RemoteHandler(BaseHTTPRequestHandler):
         if not os.path.isfile(ts_path):
             self._error(404, f"Recording not found: {filename}"); return
 
-        # Kick off (or reuse) the background remux session.
-        sess = _RecordingHlsCache.get_or_start(filename, ts_path)
+        try:
+            file_size = os.path.getsize(ts_path)
+        except OSError as exc:
+            self._error(500, f"Stat failed: {exc}"); return
 
-        if leaf.endswith(".m3u8"):
-            # Wait only until segment 0 exists, not for the whole encode.
-            if not _RecordingHlsCache.wait_for_startup(sess, timeout=45.0):
-                self._error(504, "Remux startup timeout"); return
-            if sess.failed and not os.path.exists(
-                    os.path.join(sess.outdir, "seg_00000.ts")):
-                self._error(500, f"Remux failed: {sess.error_tail[-200:]}")
-                return
+        # Get duration — probe synchronously on first access, instant thereafter.
+        dur = _probe_recording_duration(ts_path)
+        if dur is None or dur <= 0:
+            # Fallback: estimate from file size at a typical IPTV bitrate (4 Mbps).
+            dur = file_size * 8 / 4_000_000
+            print(f"[RecHLS] ffprobe unavailable for '{filename}', estimating {dur:.1f}s")
 
-            target = os.path.join(sess.outdir, leaf)
-            if not os.path.isfile(target):
-                self._error(404, f"Playlist not ready: {leaf}"); return
+        # Build instant byterange VOD playlist.
+        # Segments are fixed-duration byte slices of the original .ts file.
+        # hls.js uses HTTP Range headers to fetch only the bytes it needs —
+        # no re-encoding, full random-access seeking from the first request.
+        seg_dur   = 6.0
+        n_segs    = max(1, int(math.ceil(dur / seg_dur)))
+        bps       = file_size / dur           # bytes per second
+        ts_url    = f"/recordings/{urllib.parse.quote(filename, safe='')}"
+        target_dur = int(math.ceil(seg_dur))
 
-            base = f"/api/recordings/hls/{urllib.parse.quote(filename, safe='')}"
-            try:
-                with open(target, "r", errors="replace") as f:
-                    pl = f.read()
-                # Tell iOS native HLS (which ignores hls.js config) to start
-                # at 0 instead of the live edge while the playlist is still
-                # event-type without ENDLIST.
-                if "#EXT-X-START" not in pl:
-                    pl = pl.replace(
-                        "#EXTM3U",
-                        "#EXTM3U\n#EXT-X-START:TIME-OFFSET=0,PRECISE=YES",
-                        1,
-                    )
-                pl = re.sub(
-                    r"^(seg_\d+\.ts)$",
-                    lambda m: f"{base}/{m.group(1)}",
-                    pl,
-                    flags=re.MULTILINE,
-                )
-                data = pl.encode()
-            except Exception as exc:
-                self._error(500, f"Playlist read error: {exc}"); return
+        lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:4",
+            "#EXT-X-PLAYLIST-TYPE:VOD",
+            f"#EXT-X-TARGETDURATION:{target_dur}",
+            "#EXT-X-MEDIA-SEQUENCE:0",
+        ]
+        for i in range(n_segs):
+            seg_start = int(i * seg_dur * bps)
+            if i < n_segs - 1:
+                seg_end   = int((i + 1) * seg_dur * bps)
+                seg_len   = seg_end - seg_start
+                this_dur  = seg_dur
+            else:
+                seg_len   = file_size - seg_start
+                this_dur  = dur - i * seg_dur
+            if seg_len <= 0:
+                break
+            lines.append(f"#EXTINF:{this_dur:.6f},")
+            lines.append(f"#EXT-X-BYTERANGE:{seg_len}@{seg_start}")
+            lines.append(ts_url)
+        lines.append("#EXT-X-ENDLIST")
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
-            self.send_header("Content-Length", str(len(data)))
-            # No-cache is important: playlist grows until ENDLIST is written.
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            try:
-                self.wfile.write(data)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-        else:
-            # Segment request. May not exist yet if player raced ahead of
-            # the encoder — wait briefly, but give up if the session ended
-            # without producing this segment (bogus request / end of file).
-            target = os.path.join(sess.outdir, leaf)
-            deadline = time.time() + 30.0
-            while time.time() < deadline:
-                if os.path.exists(target) and os.path.getsize(target) > 0:
-                    break
-                if sess.done_event.is_set():
-                    break
-                time.sleep(0.2)
-            if not os.path.isfile(target):
-                self._error(404, "Segment not available"); return
-            self._serve_file_range(target)
+        data = ("\n".join(lines) + "\n").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=300")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _build_recordings_response(self) -> dict:
         """

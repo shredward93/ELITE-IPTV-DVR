@@ -17,3 +17,5 @@ dvr_buffer/
 recordings/
 .env
 docker-compose.yml
+docker-compose.backup*.yml
+docker-compose.*.backup.yml

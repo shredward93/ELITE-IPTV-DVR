@@ -120,27 +120,93 @@ def _profile_args(profile: str, encoder: str) -> list[str]:
     return video + audio
 
 
-def _detect_encoder() -> str:
-    """Probe ffmpeg for available H.264 encoders. Falls back to libx264."""
+def _hw_device_present() -> bool:
+    """True if an Intel/AMD render node is exposed to the container."""
+    for node in ("/dev/dri/renderD128", "/dev/dri/renderD129"):
+        if os.path.exists(node):
+            return True
+    return False
+
+
+def _v4l2_device_present() -> bool:
+    """True if a V4L2 M2M video device is present (Raspberry Pi etc.)."""
     try:
-        out = subprocess.run(
+        return any(n.startswith("video") for n in os.listdir("/dev"))
+    except OSError:
+        return False
+
+
+def _encoder_actually_works(enc: str) -> bool:
+    """
+    Run a 1-frame transcode with the encoder against ffmpeg's built-in
+    test source. If ffmpeg exits 0 the encoder is really usable; if it
+    crashes (missing hardware, missing driver, etc.) we fall back.
+    """
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=1",
+        "-frames:v", "1",
+    ]
+    if enc == "h264_vaapi":
+        cmd = (
+            ["ffmpeg", "-hide_banner", "-loglevel", "error",
+             "-vaapi_device", "/dev/dri/renderD128",
+             "-f", "lavfi", "-i", "testsrc=size=320x180:rate=1",
+             "-frames:v", "1",
+             "-vf", "format=nv12,hwupload"]
+        )
+    cmd += ["-c:v", enc, "-f", "null", "-"]
+    try:
+        r = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=8,
+            **config._SUBPROCESS_FLAGS,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _detect_encoder() -> str:
+    """
+    Probe ffmpeg for a *working* H.264 encoder. We require:
+      1. The encoder is compiled into ffmpeg, AND
+      2. The required /dev device is exposed to the container, AND
+      3. A 1-frame smoke-test transcode actually succeeds.
+    Falls back to libx264 otherwise.
+    """
+    try:
+        encoders_out = subprocess.run(
             ["ffmpeg", "-hide_banner", "-encoders"],
             capture_output=True, text=True, timeout=5,
             **config._SUBPROCESS_FLAGS,
         ).stdout
-    except Exception:
+    except Exception as e:
+        print(f"[MobileTranscode] ffmpeg probe failed ({e}); using libx264")
         return "libx264"
 
-    # Prefer Intel QSV > VAAPI > V4L2 M2M (Raspberry Pi etc.) > software.
-    for enc in ("h264_qsv", "h264_vaapi", "h264_v4l2m2m"):
-        if re.search(rf"\b{enc}\b", out):
+    candidates = []
+    if re.search(r"\bh264_qsv\b",     encoders_out) and _hw_device_present():
+        candidates.append("h264_qsv")
+    if re.search(r"\bh264_vaapi\b",   encoders_out) and _hw_device_present():
+        candidates.append("h264_vaapi")
+    if re.search(r"\bh264_v4l2m2m\b", encoders_out) and _v4l2_device_present():
+        candidates.append("h264_v4l2m2m")
+
+    for enc in candidates:
+        if _encoder_actually_works(enc):
+            print(f"[MobileTranscode] Hardware encoder {enc} verified OK")
             return enc
+        else:
+            print(f"[MobileTranscode] {enc} is compiled in but smoke-test failed; skipping")
+
     return "libx264"
 
 
 # ── Transcode session ───────────────────────────────────────────────────────
 class _Session:
-    __slots__ = ("channel_id", "profile", "dir", "process", "last_access", "started_at", "ready")
+    __slots__ = ("channel_id", "profile", "dir", "process", "last_access",
+                 "started_at", "ready", "_log_fh")
 
     def __init__(self, channel_id: str, profile: str, work_dir: str):
         self.channel_id  = channel_id
@@ -150,6 +216,7 @@ class _Session:
         self.last_access = time.time()
         self.started_at  = time.time()
         self.ready       = False
+        self._log_fh     = None
 
 
 # ── Manager ─────────────────────────────────────────────────────────────────
@@ -271,14 +338,16 @@ class MobileTranscodeManager:
         cmd += _profile_args(sess.profile, self._encoder)
         cmd += hls_args
 
+        log_path = os.path.join(sess.dir, "ffmpeg.log")
         try:
+            sess._log_fh = open(log_path, "wb")
             sess.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=sess._log_fh,
                 **config._SUBPROCESS_FLAGS,
             )
-            print(f"[MobileTranscode] Started {sess.channel_id}|{sess.profile} pid={sess.process.pid}")
+            print(f"[MobileTranscode] Started {sess.channel_id}|{sess.profile} pid={sess.process.pid} enc={self._encoder}")
         except FileNotFoundError:
             print("[MobileTranscode] ERROR: ffmpeg not found in PATH")
         except Exception as e:
@@ -308,6 +377,20 @@ class MobileTranscodeManager:
         self._drop_locked(key)
         return True
 
+    def _tail_ffmpeg_log(self, sess: _Session, nbytes: int = 800) -> str:
+        """Return the last `nbytes` of ffmpeg's stderr for this session."""
+        path = os.path.join(sess.dir, "ffmpeg.log")
+        try:
+            with open(path, "rb") as f:
+                try:
+                    f.seek(-nbytes, os.SEEK_END)
+                except OSError:
+                    f.seek(0)
+                data = f.read()
+            return data.decode("utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+
     def _drop_locked(self, key: str) -> None:
         sess = self._sessions.pop(key, None)
         if sess is None:
@@ -321,6 +404,11 @@ class MobileTranscodeManager:
                     sess.process.kill()
             except Exception:
                 pass
+        if sess._log_fh is not None:
+            try:
+                sess._log_fh.close()
+            except Exception:
+                pass
         try:
             shutil.rmtree(sess.dir, ignore_errors=True)
         except Exception:
@@ -332,13 +420,23 @@ class MobileTranscodeManager:
             try:
                 now = time.time()
                 with self._lock:
-                    dead = [
-                        k for k, s in self._sessions.items()
-                        if (now - s.last_access) > IDLE_TIMEOUT_SECS
-                        or (s.process and s.process.poll() is not None)
-                    ]
+                    dead = []
+                    for k, s in self._sessions.items():
+                        exited = s.process and s.process.poll() is not None
+                        idle = (now - s.last_access) > IDLE_TIMEOUT_SECS
+                        if exited or idle:
+                            reason = "exited" if exited else "idle"
+                            if exited:
+                                rc = s.process.returncode if s.process else "?"
+                                tail = self._tail_ffmpeg_log(s)
+                                if tail:
+                                    print(f"[MobileTranscode] Reaping {k} ({reason}, rc={rc})\n--- ffmpeg tail ---\n{tail}\n--- end ---")
+                                else:
+                                    print(f"[MobileTranscode] Reaping {k} ({reason}, rc={rc})")
+                            else:
+                                print(f"[MobileTranscode] Reaping {k} ({reason})")
+                            dead.append(k)
                     for k in dead:
-                        print(f"[MobileTranscode] Reaping {k} (idle or exited)")
                         self._drop_locked(k)
             except Exception as e:
                 print(f"[MobileTranscode] reaper error: {e}")

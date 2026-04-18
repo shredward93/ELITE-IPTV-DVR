@@ -122,14 +122,16 @@ class LivePreviewSession:
             return False
 
         def _waiter():
+            proc = self.process
             try:
-                if self.process:
-                    err = self.process.communicate()[1]
-                    rc = self.process.returncode
-                    if rc not in (0, None) and not self._user_stop:
-                        tail = (err or b"")[-2000:].decode("utf-8", errors="replace")
-                        self.error = tail.strip() or f"ffmpeg exited {rc}"
-                        self._failed = True
+                if proc is None:
+                    return
+                err = proc.communicate()[1]
+                rc = proc.returncode
+                if rc not in (0, None) and not self._user_stop:
+                    tail = (err or b"")[-2000:].decode("utf-8", errors="replace")
+                    self.error = tail.strip() or f"ffmpeg exited {rc}"
+                    self._failed = True
             finally:
                 self._done_event.set()
 

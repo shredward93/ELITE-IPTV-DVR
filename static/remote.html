@@ -1665,15 +1665,20 @@ function attachStreamToVideo(video, info, status, channelName){
       video.play().catch(()=>{status.textContent='Tap ▶ to start';});
     }else if(window.Hls && window.Hls.isSupported()){
       const cfg = liveDvr ? {
+        // DVR window: keep everything back-buffered so the user can scrub
+        // back through the whole session. Finite duration is required or
+        // the scrub bar becomes unusable.
         liveDurationInfinity: false,
-        backBufferLength: Infinity,
-        maxBufferLength: 300,
-        maxMaxBufferLength: 900,
+        backBufferLength: 21600,            // 6h, matches DVR_MAX_HOURS
+        maxBufferLength: 60,
+        maxMaxBufferLength: 600,
         maxBufferSize: 200 * 1024 * 1024,
         enableWorker: true,
         lowLatencyMode: false,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: Infinity,
+        // Pin live edge ~20s behind real-time so seeking forward has room
+        // before snapping back to live.
+        liveSyncDuration: 20,
+        liveMaxLatencyDuration: 60,
       } : {
         liveDurationInfinity:true,
         lowLatencyMode:false,
@@ -1700,14 +1705,19 @@ function attachStreamToVideo(video, info, status, channelName){
           currentHls.startLoad();
         }
       });
-      // Stall recovery: startLoad is insufficient if server-side FFmpeg was reaped.
-      // After 7s with no progress, do a full stream restart.
+      // Stall recovery: don't fire during user seek or pause, and don't
+      // fire while hls.js is still fetching segments for a scrub target.
       video.addEventListener('waiting', ()=>{
         if(video._stallTimer) return;
         video._stallTimer=setTimeout(()=>{
           video._stallTimer=null;
-          if(currentChannelForPlayer && !video._userPaused) playChannel(currentProfile);
-        }, 7000);
+          if(!currentChannelForPlayer) return;
+          if(video._userPaused || video.seeking) return;
+          playChannel(currentProfile);
+        }, 15000);
+      });
+      video.addEventListener('seeking', ()=>{
+        if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
       });
       video.addEventListener('playing', ()=>{
         if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
@@ -2297,12 +2307,18 @@ function playRecordingInline(kind, src, cardId, opts){
             lowLatencyMode: false,
           }
         : {
-            // Live (in-progress recording) config.
-            liveDurationInfinity: true,
-            backBufferLength: 120,
-            maxBufferLength: 30,
+            // Live (in-progress recording) config. Finite duration so the
+            // scrub bar stays usable; deep back-buffer so the user can seek
+            // back through the whole recording while it continues growing.
+            liveDurationInfinity: false,
+            backBufferLength: 21600,
+            maxBufferLength: 60,
+            maxMaxBufferLength: 600,
+            maxBufferSize: 200 * 1024 * 1024,
             enableWorker: true,
             lowLatencyMode: false,
+            liveSyncDuration: 20,
+            liveMaxLatencyDuration: 60,
           };
       const h = new window.Hls(cfg);
       h.loadSource(src); h.attachMedia(video);

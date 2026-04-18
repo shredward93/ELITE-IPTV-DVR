@@ -69,12 +69,24 @@ class _RecordingHlsCache:
             playlist = os.path.join(outdir, "index.m3u8")
             seg_pat  = os.path.join(outdir, "seg_%05d.ts")
 
+            # -map 0              : copy every stream (without this ffmpeg's
+            #                       default picks one per type, and provider
+            #                       .ts files with multi-program layouts end
+            #                       up losing the audio track).
+            # -hls_list_size 0    : keep every segment in the playlist.
+            #                       Default is 5 → only the last ~30 s
+            #                       would be playable.
+            # -hls_playlist_type vod: emit #EXT-X-PLAYLIST-TYPE:VOD and
+            #                       #EXT-X-ENDLIST so players allow scrubbing.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
                 "-i", ts_path,
+                "-map", "0",
                 "-c", "copy",
                 "-f", "hls",
                 "-hls_time", "6",
+                "-hls_list_size", "0",
+                "-hls_playlist_type", "vod",
                 "-hls_flags", "independent_segments+temp_file",
                 "-hls_segment_type", "mpegts",
                 "-hls_segment_filename", seg_pat,

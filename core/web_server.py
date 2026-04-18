@@ -1240,30 +1240,81 @@ class RemoteHandler(BaseHTTPRequestHandler):
         needs_remux  = audio_codec != "aac"  # AC3, MP2, unknown → transcode
 
         # ── Remux path (non-AAC audio) ────────────────────────────────────────
+        # Strategy: generate a fake-complete VOD playlist immediately (after
+        # waiting only for the first segment, ~3-5s), so hls.js treats the
+        # stream as seekable VOD from the start.  Segment requests block until
+        # ffmpeg writes the requested file — at 50-100× realtime the encoder
+        # is always well ahead of normal playback.  Seeking near the end of a
+        # long recording while still transcoding may stall briefly; that's the
+        # only tradeoff vs waiting for full completion.
         if needs_remux:
             if leaf == "index.m3u8":
                 sess = _RecordingHlsCache.get_or_start(filename, ts_path)
-                if not sess.completed:
-                    # Wait for the full transcode so the playlist contains
-                    # #EXT-X-ENDLIST and hls.js treats it as a seekable VOD
-                    # rather than a growing live stream. Audio-only transcode
-                    # runs at 50-100x realtime (video is copied), so a 2-hour
-                    # recording typically waits 60-120s on first play.
-                    print(f"[RecHLS] Waiting for full transcode of '{filename}'…")
-                    sess.done_event.wait(timeout=300)
-                if sess.failed:
+                ready = _RecordingHlsCache.wait_for_startup(sess, timeout=45.0)
+                if not ready or sess.failed:
                     self._error(503, f"Remux failed: {sess.error_tail[:200]}"); return
-                m3u8_path = os.path.join(sess.outdir, "index.m3u8")
+
+                # Build a synthetic complete VOD playlist from the probed duration.
+                # All segment durations are estimated at seg_dur; the final segment
+                # uses the remainder.  hls.js tolerates minor EXTINF drift.
                 try:
-                    with open(m3u8_path, "rb") as f:
-                        data = f.read()
-                except OSError as exc:
-                    self._error(500, f"Could not read remux playlist: {exc}"); return
-                # Rewrite EVENT → VOD so hls.js enables full random-access seeking.
-                data = data.replace(b"#EXT-X-PLAYLIST-TYPE:EVENT",
-                                    b"#EXT-X-PLAYLIST-TYPE:VOD")
+                    file_size = os.path.getsize(ts_path)
+                except OSError:
+                    file_size = 0
+                dur = _probe_recording_duration(ts_path)
+                if dur is None or dur <= 0:
+                    dur = file_size * 8 / 4_000_000
+                seg_dur   = 6.0
+                n_segs    = max(1, int(math.ceil(dur / seg_dur)))
+                tgt_dur   = int(math.ceil(seg_dur)) + 1  # headroom for GOP-aligned splits
+                lines = [
+                    "#EXTM3U",
+                    "#EXT-X-VERSION:3",
+                    "#EXT-X-PLAYLIST-TYPE:VOD",
+                    f"#EXT-X-TARGETDURATION:{tgt_dur}",
+                    "#EXT-X-MEDIA-SEQUENCE:0",
+                ]
+                for i in range(n_segs):
+                    this_dur = seg_dur if i < n_segs - 1 else max(0.001, dur - i * seg_dur)
+                    lines.append(f"#EXTINF:{this_dur:.6f},")
+                    lines.append(f"seg_{i:05d}.ts")
+                lines.append("#EXT-X-ENDLIST")
+                data = ("\n".join(lines) + "\n").encode()
+
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            elif leaf == "status":
+                # Progress endpoint polled by the player UI.
+                # Returns {pct: 0-100, done: bool, codec: str}
+                sess  = _RecordingHlsCache._sessions.get(filename)
+                codec = _probe_recording_audio_codec(ts_path) or "unknown"
+                if sess is None:
+                    result = {"pct": 0, "done": False, "codec": codec}
+                elif sess.failed:
+                    result = {"pct": -1, "done": True, "codec": codec}
+                elif sess.completed:
+                    result = {"pct": 100, "done": True, "codec": codec}
+                else:
+                    dur = _probe_recording_duration(ts_path) or 0
+                    n_expected = max(1, int(math.ceil(dur / 6.0)))
+                    try:
+                        n_done = len(glob.glob(os.path.join(sess.outdir, "seg_*.ts")))
+                    except Exception:
+                        n_done = 0
+                    result = {"pct": min(99, int(100 * n_done / n_expected)),
+                              "done": False, "codec": codec}
+                data = json.dumps(result).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Cache-Control", "no-cache")
                 self.send_header("Access-Control-Allow-Origin", "*")
@@ -1276,12 +1327,11 @@ class RemoteHandler(BaseHTTPRequestHandler):
             elif re.match(r'^seg_\d+\.ts$', leaf):
                 sess = _RecordingHlsCache._sessions.get(filename)
                 if not sess:
-                    # Session evicted or never started — kick it off and wait.
                     sess = _RecordingHlsCache.get_or_start(filename, ts_path)
                     _RecordingHlsCache.wait_for_startup(sess)
                 seg_path = os.path.join(sess.outdir, leaf)
-                # Wait up to 15s for this segment to be written.
-                deadline = time.time() + 15
+                # Block until ffmpeg writes this segment (up to 30s).
+                deadline = time.time() + 30
                 while not os.path.isfile(seg_path) and time.time() < deadline:
                     if sess.failed:
                         self._error(503, "Remux failed"); return

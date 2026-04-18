@@ -375,6 +375,24 @@
     pointer-events:none;
   }
   .rec-inline-player.controls-visible .rec-player-bar{opacity:1; pointer-events:auto}
+  /* Transcode progress bar */
+  .rec-transcode-bar{
+    position:absolute; bottom:0; left:0; right:0; z-index:9;
+    pointer-events:none; display:none;
+  }
+  .rec-transcode-bar.visible{display:block}
+  .rec-transcode-track{
+    height:3px; background:rgba(255,255,255,.15);
+  }
+  .rec-transcode-fill{
+    height:100%; background:var(--signal);
+    transition:width .6s linear; width:0%;
+  }
+  .rec-transcode-label{
+    display:block; text-align:center; padding:3px 0 4px;
+    font-size:10px; color:rgba(255,255,255,.55); letter-spacing:.02em;
+    background:rgba(0,0,0,.55);
+  }
   /* Seek bar */
   .rec-seek-wrap{
     position:relative; height:18px; display:flex; align-items:center;
@@ -2185,6 +2203,7 @@ function closeInlinePlayer(cardId){
     try{video.removeAttribute('src'); video.load();}catch(e){}
   }
   if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
+  if(holder._transcodeTimer){clearTimeout(holder._transcodeTimer); holder._transcodeTimer=null;}
   if(holder._keyHandler){document.removeEventListener('keydown',holder._keyHandler);}
   if(document.fullscreenElement===holder) document.exitFullscreen().catch(()=>{});
   holder.remove();
@@ -2434,6 +2453,10 @@ function playRecordingInline(kind, src, cardId, opts){
       + '<div class="rec-overlay-top">'
       +   '<button class="rec-inline-close" title="Close" onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
       + '</div>'
+      + '<div class="rec-transcode-bar">'
+      +   '<div class="rec-transcode-track"><div class="rec-transcode-fill"></div></div>'
+      +   '<span class="rec-transcode-label"></span>'
+      + '</div>'
       + '<div class="rec-player-bar">'
       +   '<div class="rec-seek-wrap">'
       +     '<div class="rec-seek-bg"></div>'
@@ -2480,6 +2503,12 @@ function playRecordingInline(kind, src, cardId, opts){
   // One-video-at-a-time: pause every other <video> on the page first.
   stopAllVideosExcept(video);
   if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
+  // Cancel any in-progress transcode status poll from a previous play.
+  if(holder._transcodeTimer){clearTimeout(holder._transcodeTimer); holder._transcodeTimer=null;}
+  const _tBar  = holder.querySelector('.rec-transcode-bar');
+  const _tFill = holder.querySelector('.rec-transcode-fill');
+  const _tLbl  = holder.querySelector('.rec-transcode-label');
+  if(_tBar) _tBar.classList.remove('visible');
 
   const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
   const isCompletedRec = typeof src==='string' && src.indexOf('/api/recordings/hls/')===0;
@@ -2552,6 +2581,26 @@ function playRecordingInline(kind, src, cardId, opts){
   }
   video.play().catch(()=>{});
   _recShowControls(holder, false);
+
+  // Start transcode progress polling for non-AAC remux recordings.
+  if(kind==='hls' && typeof src==='string'){
+    const fnMatch = src.match(/\/api\/recordings\/hls\/([^/]+)\/index\.m3u8/);
+    if(fnMatch){
+      const statusUrl = '/api/recordings/hls/'+fnMatch[1]+'/status';
+      (function poll(){
+        fetch(statusUrl).then(r=>r.json()).then(d=>{
+          if(!_tBar) return;
+          if(d.done || d.pct<=0 || d.codec==='aac'){
+            _tBar.classList.remove('visible'); return;
+          }
+          _tBar.classList.add('visible');
+          if(_tFill) _tFill.style.width=d.pct+'%';
+          if(_tLbl)  _tLbl.textContent='Transcoding audio: '+d.pct+'%';
+          holder._transcodeTimer=setTimeout(poll, 2000);
+        }).catch(()=>{ if(_tBar) _tBar.classList.remove('visible'); });
+      })();
+    }
+  }
 }
 function _fmtScheduleTime(iso){
   if(!iso) return '';

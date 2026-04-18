@@ -51,7 +51,7 @@
     -webkit-backdrop-filter:blur(22px) saturate(1.2);
     background:var(--blur-bg);
     border-bottom:1px solid var(--rule);
-    padding:18px 20px 14px;
+    padding:14px 20px 0;
   }
   .brand{
     display:flex; align-items:baseline; justify-content:space-between;
@@ -149,7 +149,7 @@
   }
 
   /* SEARCH */
-  .search-wrap{margin:14px 20px 0}
+  .search-wrap{margin:10px 0 0; padding:0 20px}
   .search-input-wrap{position:relative}
   .search-input-wrap::before{
     content:''; position:absolute; left:14px; top:50%;
@@ -238,10 +238,11 @@
     opacity:1;
     pointer-events:auto;
   }
-  .player-ctrl{display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap}
-  #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .quality-group{display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .quality-group .qlabel{font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:var(--paper-muted); text-transform:uppercase; margin-right:4px}
+  .player-ctrl{display:flex; flex-direction:column; gap:8px; margin-top:8px}
+  .player-ctrl-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px}
+  .quality-group{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .quality-group .qlabel{font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:var(--paper-muted); text-transform:uppercase; margin-right:2px; flex-shrink:0}
   .qbtn{
     background:transparent; color:var(--paper-2);
     border:1px solid var(--rule); border-radius:14px;
@@ -454,6 +455,68 @@
     max-height:100vh; height:100%; object-fit:contain;
   }
 
+  /* MORE MENU (channel card) */
+  .more-wrap{position:relative}
+  .more-menu{
+    position:absolute; top:calc(100% + 6px); right:0;
+    background:var(--surface-2); border:1px solid var(--rule);
+    border-radius:12px; padding:6px; z-index:50;
+    min-width:170px; box-shadow:var(--shadow-lg);
+    display:none; flex-direction:column; gap:2px;
+    animation:more-in .14s ease-out both;
+  }
+  .more-menu.open{display:flex}
+  @keyframes more-in{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
+  .more-item{
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; border-radius:8px;
+    font-family:'Manrope',sans-serif; font-size:13px; font-weight:500;
+    color:var(--paper); cursor:pointer; border:none; background:none;
+    text-align:left; width:100%; transition:background .12s;
+  }
+  .more-item:hover{background:var(--surface-3)}
+  .more-item .more-icon{font-size:15px; flex-shrink:0; width:20px; text-align:center}
+  .more-item.ok-state{color:var(--ok)}
+  .more-item.danger-state{color:var(--live)}
+
+  /* GUIDE BREADCRUMB */
+  .guide-breadcrumb{
+    display:none; align-items:center; gap:6px;
+    margin-bottom:12px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; color:var(--paper-muted);
+    letter-spacing:0.08em; text-transform:uppercase;
+  }
+  .guide-breadcrumb.visible{display:flex}
+  .guide-bc-sep{color:var(--rule); margin:0 2px}
+  .guide-bc-link{
+    cursor:pointer; color:var(--paper-muted);
+    transition:color .15s; padding:2px 0;
+    border-bottom:1px solid transparent;
+  }
+  .guide-bc-link:hover{color:var(--signal); border-bottom-color:var(--signal)}
+  .guide-bc-current{color:var(--paper)}
+
+  /* FAV SECTION DIVIDER */
+  .fav-section-hdr{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--paper-muted); padding:14px 0 8px;
+    border-bottom:1px solid var(--rule); margin-bottom:10px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .fav-section-hdr:first-child{padding-top:4px}
+
+  /* CATEGORY HEART BUTTON */
+  .cat-heart{
+    background:none; border:none; cursor:pointer;
+    font-size:14px; padding:4px 6px; border-radius:6px;
+    color:var(--paper-muted); line-height:1;
+    transition:color .15s, background .12s; flex-shrink:0;
+  }
+  .cat-heart:hover{background:var(--surface-3); color:var(--live)}
+  .cat-heart.saved{color:var(--live)}
+
   /* EPG (selected channel) */
   #epg-panel{border-top:1px solid var(--rule); padding-top:14px; margin-top:4px}
   .epg-row{
@@ -477,8 +540,7 @@
   /* TABS */
   .tabs{
     display:flex; gap:0;
-    padding:0 20px; margin-top:24px;
-    border-bottom:1px solid var(--rule);
+    padding:0; margin-top:10px;
     overflow-x:auto;
     -ms-overflow-style:none; scrollbar-width:none;
   }
@@ -800,14 +862,15 @@
 
   /* Toast */
   .toast{
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    position:fixed; top:12px; left:50%; transform:translateX(-50%) translateY(-16px);
     background:var(--paper); color:var(--ink);
-    padding:12px 20px; border-radius:10px;
+    padding:11px 20px; border-radius:10px;
     font-family:'Manrope',sans-serif; font-weight:600; font-size:13px;
     box-shadow:var(--shadow-lg);
     opacity:0; pointer-events:none;
-    transition:opacity .2s, transform .2s;
-    z-index:200;
+    transition:opacity .18s, transform .18s;
+    z-index:400;
+    max-width:calc(100vw - 40px); white-space:nowrap;
   }
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
 </style>
@@ -837,14 +900,19 @@
       <button class="rec-stop" id="rec-banner-stop" onclick="stopJobFromBanner()">■ Stop</button>
       <span class="rec-more" id="rec-banner-more" style="display:none" onclick="switchTab('recs')"></span>
     </div>
-  </header>
-
-  <div class="search-wrap">
-    <div class="search-input-wrap">
-      <input type="search" id="search-input" placeholder="Search channels" oninput="onSearch()" autocomplete="off">
+    <div class="search-wrap">
+      <div class="search-input-wrap">
+        <input type="search" id="search-input" placeholder="Search channels…" oninput="onSearch()" autocomplete="off">
+      </div>
     </div>
-    <div id="search-results"></div>
-  </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="guide">TV Guide</button>
+      <button class="tab" data-tab="recs">Recordings <span class="count" id="rec-count"></span></button>
+      <button class="tab" data-tab="favs">❤ Channels <span class="count" id="fav-count"></span></button>
+      <button class="tab" data-tab="log">Log</button>
+    </nav>
+  </header>
+  <div id="search-results" style="padding:0 20px"></div>
 
   <div id="sel-card" class="selected-dock" style="display:none">
     <div class="selected-header">
@@ -859,8 +927,17 @@
         <button class="btn primary" onclick="playChannel()">▶  Watch Live</button>
         <button class="btn danger" onclick="openModal(true)">●  Record Now</button>
         <button class="btn ghost" onclick="openModal(false)">⧖  Schedule</button>
-        <button class="btn ghost" id="fav-btn" onclick="toggleFav()">☆  Save</button>
-        <button class="btn ghost" onclick="setBackup()">⤓  Set Backup</button>
+        <div class="more-wrap">
+          <button class="btn ghost" id="more-btn" onclick="toggleMoreMenu(event)">⋯  More</button>
+          <div class="more-menu" id="more-menu">
+            <button class="more-item" id="more-fav-btn" onclick="toggleFav();closeMoreMenu()">
+              <span class="more-icon" id="more-fav-icon">☆</span><span id="more-fav-label">Save Channel</span>
+            </button>
+            <button class="more-item" onclick="setBackup();closeMoreMenu()">
+              <span class="more-icon">⤓</span>Set as Backup
+            </button>
+          </div>
+        </div>
       </div>
       <div id="player-panel" style="display:none">
         <div id="channel-inline-player" class="rec-inline-player paused">
@@ -898,13 +975,15 @@
           </div>
         </div>
         <div class="player-ctrl">
-          <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
-          <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">Open in VLC</button>
-          <button class="btn ghost btn-sm" onclick="castLivePlayer()">Cast</button>
+          <div class="player-ctrl-row">
+            <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
+            <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">Open in VLC</button>
+            <button class="btn ghost btn-sm" onclick="castLivePlayer()">Cast</button>
+          </div>
           <div class="quality-group" id="watch-mode-group">
             <span class="qlabel">Watch</span>
             <button class="qbtn" type="button" data-profile="live_dvr" title="Buffered on your NAS — smoothest live TV">Live DVR</button>
-            <button class="qbtn" type="button" data-profile="original" title="Direct from provider — lowest NAS load; can stutter on poor networks">Original stream</button>
+            <button class="qbtn" type="button" data-profile="original" title="Direct from provider — lowest NAS load; can stutter on poor networks">Original</button>
             <button class="qbtn" type="button" data-profile="data_saver" title="720p · ~2.5 Mbps — easier on cellular or slow Wi‑Fi (transcodes on NAS)">Data saver</button>
           </div>
           <span id="player-status"></span>
@@ -914,18 +993,16 @@
     </div>
   </div>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="guide">TV Guide</button>
-    <button class="tab" data-tab="recs">Recordings <span class="count" id="rec-count"></span></button>
-    <button class="tab" data-tab="favs">Saved <span class="count" id="fav-count"></span></button>
-    <button class="tab" data-tab="log">Log</button>
-  </nav>
-
   <main>
     <section id="pane-guide" class="pane active">
       <div class="guide-toolbar">
         <div class="guide-meta" id="guide-meta">Loading categories…</div>
         <button class="mini-btn" onclick="refreshGuide(true)">↻  Refresh</button>
+      </div>
+      <div class="guide-breadcrumb" id="guide-breadcrumb">
+        <span class="guide-bc-link" onclick="clearGuideSelection()">TV Guide</span>
+        <span class="guide-bc-sep">›</span>
+        <span class="guide-bc-current" id="guide-bc-cat"></span>
       </div>
       <div id="guide-categories" class="guide-category-list"></div>
       <div id="guide-panel"><div class="guide-empty">Select a category to load its channels.</div></div>
@@ -941,10 +1018,12 @@
 
     <section id="pane-favs" class="pane">
       <div class="pane-head">
-        <h2 class="pane-title">Saved Channels</h2>
-        <span class="pane-meta">Favorites</span>
+        <h2 class="pane-title">❤ Channels</h2>
+        <span class="pane-meta">Saved</span>
       </div>
       <div id="favorites"><div class="empty">No saved channels yet</div></div>
+      <div class="fav-section-hdr" style="margin-top:18px">❤ Categories</div>
+      <div id="fav-categories"><div class="empty">Heart a category in TV Guide to save it here</div></div>
     </section>
 
     <section id="pane-log" class="pane">
@@ -996,6 +1075,33 @@ let selId=null,selName=null,allFavs=[],searchTimer=null,isRecordNow=false;
 let activeTab='guide';
 let guideCategories=[],guideBundle=null,guideSelectedCategoryId='',guideSelectedChannelId='',guideLoading=false,guideError='';
 let logOpen=false;
+let savedCategories=JSON.parse(localStorage.getItem('elite_saved_cats')||'[]');
+function isCatSaved(id){return savedCategories.some(c=>c.id===String(id))}
+function toggleSavedCategory(id,name,e){
+  if(e)e.stopPropagation();
+  id=String(id);
+  if(isCatSaved(id)){savedCategories=savedCategories.filter(c=>c.id!==id);toast('Category removed');}
+  else{savedCategories.push({id,name});toast('Category saved');}
+  localStorage.setItem('elite_saved_cats',JSON.stringify(savedCategories));
+  renderGuideCategories();
+  renderSavedCategories();
+}
+function renderSavedCategories(){
+  const el=document.getElementById('fav-categories');
+  if(!el)return;
+  if(!savedCategories.length){el.innerHTML='<div class="empty">Heart a category in TV Guide to save it here</div>';return}
+  el.innerHTML=savedCategories.map(c=>`
+    <div class="fav-row">
+      <span class="fav-name" onclick="selectSavedCategory('${escAttr(c.id)}','${escAttr(c.name)}')">${esc(c.name)}</span>
+      <button class="mini-btn" onclick="selectSavedCategory('${escAttr(c.id)}','${escAttr(c.name)}')">Open</button>
+      <button class="mini-btn" onclick="toggleSavedCategory('${escAttr(c.id)}','${escAttr(c.name)}')">✕</button>
+    </div>`).join('');
+}
+function selectSavedCategory(id,name){
+  switchTab('guide');
+  selectGuideCategory(id);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function escAttr(s){return esc(s).replace(/'/g,'&#39;')}
@@ -1109,11 +1215,21 @@ function renderGuideCategories(){
   }
   el.style.display='grid';
   el.innerHTML=categories.map(cat=>`
-    <button class="guide-category-card" data-category-id="${escAttr(cat.category_id)}" onclick="selectGuideCategory(this.dataset.categoryId)">
-      ${esc(cat.category_name)}
-      <small>Tap to load</small>
-    </button>`).join('');
+    <div style="position:relative">
+      <button class="guide-category-card" data-category-id="${escAttr(cat.category_id)}" onclick="selectGuideCategory(this.dataset.categoryId)" style="width:100%;padding-right:34px">
+        ${esc(cat.category_name)}
+        <small>Tap to load</small>
+      </button>
+      <button class="cat-heart${isCatSaved(cat.category_id)?' saved':''}"
+        style="position:absolute;top:8px;right:8px;z-index:2"
+        title="${isCatSaved(cat.category_id)?'Remove from saved':'Save category'}"
+        data-cat-id="${escAttr(cat.category_id)}" data-cat-name="${escAttr(cat.category_name)}"
+        onclick="toggleSavedCategory(this.dataset.catId,this.dataset.catName,event)">
+        ${isCatSaved(cat.category_id)?'❤':'♡'}
+      </button>
+    </div>`).join('');
 }
+
 
 function renderGuideChannel(channel, listings){
   const current=listings.find(guideIsNow) || listings[0] || null;
@@ -1190,12 +1306,24 @@ function selectGuideChannel(channelId, channelName){
     if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
   });
 }
+function updateGuideBreadcrumb(){
+  const bc=document.getElementById('guide-breadcrumb');
+  const catEl=document.getElementById('guide-bc-cat');
+  if(!bc||!catEl)return;
+  if(guideSelectedCategoryId){
+    catEl.textContent=guideCategoryName(guideSelectedCategoryId);
+    bc.classList.add('visible');
+  }else{
+    bc.classList.remove('visible');
+  }
+}
 function selectGuideCategory(categoryId){
   guideSelectedCategoryId=String(categoryId||'');
   guideSelectedChannelId='';
   guideBundle=null;
   renderGuideCategories();
   renderGuidePanel();
+  updateGuideBreadcrumb();
   refreshGuide(true).then(()=>{
     const el=document.getElementById('guide-panel');
     if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1209,6 +1337,7 @@ function clearGuideSelection(){
   renderGuideCategories();
   renderGuidePanel();
   updateGuideMeta();
+  updateGuideBreadcrumb();
 }
 
 async function refreshGuide(force=false){
@@ -1301,17 +1430,18 @@ function refreshStatus(){
 
 /* ═══ FAVORITES ═══ */
 function refreshFavs(){
+  renderSavedCategories();
   fetch('/api/favorites').then(r=>r.json()).then(favs=>{
     allFavs=favs;
     const el=document.getElementById('favorites');
     const favCount=document.getElementById('fav-count');
-    favCount.textContent=favs.length?favs.length:'';
+    const total=favs.length+savedCategories.length;
+    favCount.textContent=total||'';
     if(!favs.length){el.innerHTML='<div class="empty">No saved channels yet</div>';return}
     el.innerHTML=favs.map(f=>`
       <div class="fav-row">
-        <span class="fav-name" onclick="selectFav('${esc(f.id)}','${esc(f.name)}')">${esc(f.name)}</span>
-        <button class="mini-btn" onclick="selectFav('${esc(f.id)}','${esc(f.name)}')">Select</button>
-        <button class="mini-btn" onclick="removeFav('${esc(f.name)}')">✕</button>
+        <span class="fav-name" onclick="selectFav('${escAttr(f.id)}','${escAttr(f.name)}')">${esc(f.name)}</span>
+        <button class="mini-btn" onclick="removeFav('${escAttr(f.name)}')">✕</button>
       </div>`).join('');
     updateFavBtn();
   }).catch(()=>{});
@@ -1324,10 +1454,29 @@ function selectFav(id,name){
 function updateFavBtn(){
   if(!selId)return;
   const saved=allFavs.some(f=>f.id===selId);
-  const btn=document.getElementById('fav-btn');
-  btn.innerHTML=saved?'★  Saved':'☆  Save';
-  btn.className=saved?'btn ok':'btn ghost';
+  // Update ⋯ More menu items to reflect saved state
+  const icon=document.getElementById('more-fav-icon');
+  const label=document.getElementById('more-fav-label');
+  const moreItem=document.getElementById('more-fav-btn');
+  if(icon) icon.textContent=saved?'★':'☆';
+  if(label) label.textContent=saved?'Remove from Saved':'Save Channel';
+  if(moreItem) moreItem.className='more-item'+(saved?' ok-state':'');
 }
+let _moreMenuOpen=false;
+function toggleMoreMenu(e){
+  e.stopPropagation();
+  const menu=document.getElementById('more-menu');
+  _moreMenuOpen=!_moreMenuOpen;
+  menu.classList.toggle('open',_moreMenuOpen);
+}
+function closeMoreMenu(){
+  _moreMenuOpen=false;
+  const menu=document.getElementById('more-menu');
+  if(menu)menu.classList.remove('open');
+}
+document.addEventListener('click',e=>{
+  if(_moreMenuOpen&&!e.target.closest('.more-wrap'))closeMoreMenu();
+});
 function toggleFav(){
   if(!selId)return;
   const saved=allFavs.some(f=>f.id===selId);
@@ -1567,11 +1716,21 @@ function confirmSchedule(){
   }).catch(()=>toast('Error'));
 }
 
-// Close open picker when tapping outside the modal.
+// Close picker when tapping outside, close modal on backdrop tap or ESC.
 document.addEventListener('click', e=>{
   if(!mOpenPicker) return;
   if(e.target.closest('.time-pill')||e.target.closest('.time-list')) return;
   closePickers();
+});
+document.getElementById('overlay').addEventListener('click', e=>{
+  if(e.target===document.getElementById('overlay')) closeModal();
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    closeModal();
+    closeMoreMenu();
+    closePickers();
+  }
 });
 function setBackup(){
   if(!selId)return;

@@ -229,18 +229,12 @@
   .btn.ok{background:transparent; border:1px solid var(--ok); color:var(--ok)}
   .btn-sm{padding:8px 12px; font-size:12px}
 
-  /* VIDEO PLAYER */
-  #player-panel{margin:0 0 14px}
-  #channel-inline-player{margin-top:10px}
-  /* Always show scrubber + buttons on the channel player (Live DVR hides them otherwise). */
+  /* VIDEO PLAYER — pinned in topbar; always show controls */
   #channel-inline-player .rec-player-bar,
   #channel-inline-player .rec-overlay-top{
     opacity:1;
     pointer-events:auto;
   }
-  .player-ctrl{display:flex; flex-direction:column; gap:8px; margin-top:8px}
-  .player-ctrl-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px}
   .quality-group{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
   .quality-group .qlabel{font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:var(--paper-muted); text-transform:uppercase; margin-right:2px; flex-shrink:0}
   .qbtn{
@@ -854,6 +848,36 @@
   }
   .time-duration b{color:var(--signal); font-weight:600}
 
+  /* ═══ TOPBAR PINNED PLAYER ═══ */
+  #topbar-player{
+    margin:10px -20px 0;
+    overflow:hidden;
+    animation:tp-slide-in .22s cubic-bezier(.16,1,.3,1) both;
+  }
+  @keyframes tp-slide-in{
+    from{opacity:0; transform:translateY(-12px)}
+    to{opacity:1; transform:translateY(0)}
+  }
+  #topbar-player .rec-inline-player{
+    border-radius:0; border-left:0; border-right:0; border-top:0;
+    margin:0; box-shadow:none;
+  }
+  #topbar-player .rec-inline-player video{max-height:220px}
+  #topbar-player .rec-video-wrap{max-height:220px}
+  .topbar-ctrl-bar{
+    display:flex; align-items:center; gap:8px;
+    padding:7px 20px; flex-wrap:wrap;
+    background:var(--ink-soft);
+    border-bottom:1px solid var(--rule);
+  }
+  .topbar-ctrl-bar .quality-group{flex:1; min-width:0}
+  .topbar-ctrl-bar #player-status{
+    font-family:'JetBrains Mono',monospace; font-size:11px;
+    color:var(--paper-muted); min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; flex-shrink:1; max-width:160px;
+  }
+  .topbar-ctrl-bar .btn-sm{padding:6px 10px; font-size:11px}
+
   /* SCROLLBARS */
   ::-webkit-scrollbar{width:8px; height:8px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -900,6 +924,54 @@
       <button class="rec-stop" id="rec-banner-stop" onclick="stopJobFromBanner()">■ Stop</button>
       <span class="rec-more" id="rec-banner-more" style="display:none" onclick="switchTab('recs')"></span>
     </div>
+    <div id="topbar-player" style="display:none">
+      <div id="channel-inline-player" class="rec-inline-player paused">
+        <div class="rec-video-wrap">
+          <video id="video-player" autoplay playsinline webkit-playsinline x-webkit-airplay="allow"></video>
+          <div class="rec-spinner"></div>
+          <div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">-10s</span></div>
+          <div class="rec-tap-zone rec-tap-center"></div>
+          <div class="rec-tap-zone rec-tap-right"><div class="rec-tap-ripple"></div><span class="rec-tap-label">+10s</span></div>
+          <button type="button" class="rec-center-play" title="Play" aria-label="Play">Play</button>
+          <div class="rec-overlay-top">
+            <button type="button" class="rec-inline-close" title="Stop player" onclick="stopPlayer()">✕</button>
+          </div>
+          <div class="rec-player-bar">
+            <div class="rec-seek-wrap">
+              <div class="rec-seek-bg"></div>
+              <div class="rec-seek-buffered"></div>
+              <div class="rec-seek-played"></div>
+              <input type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">
+            </div>
+            <div class="rec-time-row">
+              <span class="rec-seek-time">0:00</span>
+              <span class="rec-seek-dur">0:00</span>
+            </div>
+            <div class="rec-ctrl-row">
+              <button type="button" class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)" title="Play/Pause">Pause</button>
+              <button type="button" class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">-10s</button>
+              <button type="button" class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">+10s</button>
+              <span class="rec-ctrl-spacer"></span>
+              <button type="button" class="rec-ctrl-btn" title="Open in VLC" onclick="_channelRecWatchVLC(this)">VLC</button>
+              <button type="button" class="rec-ctrl-btn" title="Cast / AirPlay" onclick="_recCast(this)">Cast</button>
+              <button type="button" class="rec-ctrl-btn" title="Fullscreen" onclick="_recFullscreen(this)">FS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-ctrl-bar">
+        <div class="quality-group" id="watch-mode-group">
+          <span class="qlabel">Watch</span>
+          <button class="qbtn" type="button" data-profile="live_dvr" title="Buffered on your NAS — smoothest live TV">Live DVR</button>
+          <button class="qbtn" type="button" data-profile="original" title="Direct from provider — lowest NAS load; can stutter on poor networks">Original</button>
+          <button class="qbtn" type="button" data-profile="data_saver" title="720p · ~2.5 Mbps — easier on cellular or slow Wi‑Fi">Data saver</button>
+        </div>
+        <span id="player-status"></span>
+        <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">VLC</button>
+        <button class="btn ghost btn-sm" onclick="castLivePlayer()">Cast</button>
+        <button class="btn ghost btn-sm" onclick="stopPlayer()">■ Stop</button>
+      </div>
+    </div>
     <div class="search-wrap">
       <div class="search-input-wrap">
         <input type="search" id="search-input" placeholder="Search channels…" oninput="onSearch()" autocomplete="off">
@@ -937,56 +1009,6 @@
               <span class="more-icon">⤓</span>Set as Backup
             </button>
           </div>
-        </div>
-      </div>
-      <div id="player-panel" style="display:none">
-        <div id="channel-inline-player" class="rec-inline-player paused">
-          <div class="rec-video-wrap">
-            <video id="video-player" autoplay playsinline webkit-playsinline x-webkit-airplay="allow"></video>
-            <div class="rec-spinner"></div>
-            <div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">-10s</span></div>
-            <div class="rec-tap-zone rec-tap-center"></div>
-            <div class="rec-tap-zone rec-tap-right"><div class="rec-tap-ripple"></div><span class="rec-tap-label">+10s</span></div>
-            <button type="button" class="rec-center-play" title="Play" aria-label="Play">Play</button>
-            <div class="rec-overlay-top">
-              <button type="button" class="rec-inline-close" title="Stop player" onclick="stopPlayer()">Close</button>
-            </div>
-            <div class="rec-player-bar">
-              <div class="rec-seek-wrap">
-                <div class="rec-seek-bg"></div>
-                <div class="rec-seek-buffered"></div>
-                <div class="rec-seek-played"></div>
-                <input type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">
-              </div>
-              <div class="rec-time-row">
-                <span class="rec-seek-time">0:00</span>
-                <span class="rec-seek-dur">0:00</span>
-              </div>
-              <div class="rec-ctrl-row">
-                <button type="button" class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)" title="Play/Pause">Pause</button>
-                <button type="button" class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">-10s</button>
-                <button type="button" class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">+10s</button>
-                <span class="rec-ctrl-spacer"></span>
-                <button type="button" class="rec-ctrl-btn" title="Open in VLC" onclick="_channelRecWatchVLC(this)">VLC</button>
-                <button type="button" class="rec-ctrl-btn" title="Cast / AirPlay" onclick="_recCast(this)">Cast</button>
-                <button type="button" class="rec-ctrl-btn" title="Fullscreen" onclick="_recFullscreen(this)">FS</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="player-ctrl">
-          <div class="player-ctrl-row">
-            <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
-            <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">Open in VLC</button>
-            <button class="btn ghost btn-sm" onclick="castLivePlayer()">Cast</button>
-          </div>
-          <div class="quality-group" id="watch-mode-group">
-            <span class="qlabel">Watch</span>
-            <button class="qbtn" type="button" data-profile="live_dvr" title="Buffered on your NAS — smoothest live TV">Live DVR</button>
-            <button class="qbtn" type="button" data-profile="original" title="Direct from provider — lowest NAS load; can stutter on poor networks">Original</button>
-            <button class="qbtn" type="button" data-profile="data_saver" title="720p · ~2.5 Mbps — easier on cellular or slow Wi‑Fi (transcodes on NAS)">Data saver</button>
-          </div>
-          <span id="player-status"></span>
         </div>
       </div>
       <div id="epg-panel"><div class="empty">Loading guide…</div></div>
@@ -1920,7 +1942,7 @@ function attachStreamToVideo(video, info, status, channelName){
 async function playChannel(forceProfile){
   if(!selId){toast('Select a channel first');return;}
   const video=document.getElementById('video-player');
-  const panel=document.getElementById('player-panel');
+  const topbarPlayer=document.getElementById('topbar-player');
   const status=document.getElementById('player-status');
 
   const choice   = forceProfile || savedWatchMode();
@@ -1929,7 +1951,10 @@ async function playChannel(forceProfile){
   currentChannelForPlayer = {id:selId, name:selName};
   setActiveWatchModeBtn(choice);
 
-  panel.style.display='block';
+  // Re-trigger slide-in animation each time player opens
+  topbarPlayer.style.display='none';
+  void topbarPlayer.offsetWidth;
+  topbarPlayer.style.display='block';
 
   tearDownPlayer();
   stopAllVideosExcept(video);
@@ -1968,10 +1993,10 @@ async function playChannel(forceProfile){
   syncChannelPlayerShell(profile);
 }
 function stopPlayer(){
-  const panel=document.getElementById('player-panel');
+  const topbarPlayer=document.getElementById('topbar-player');
   const status=document.getElementById('player-status');
   tearDownPlayer();
-  panel.style.display='none';
+  topbarPlayer.style.display='none';
   status.textContent='';
   currentProfile=null;
   currentPreviewId=null;

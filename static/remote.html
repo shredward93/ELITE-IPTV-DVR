@@ -273,8 +273,10 @@
   .rec-actions{display:flex; gap:6px; flex-wrap:wrap}
   .rec-actions .btn{padding:7px 11px; font-size:12px}
   .rec-actions a.btn{text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
-  .rec-inline-player{margin-top:10px}
+  .rec-inline-player{margin-top:10px; position:relative}
   .rec-inline-player video{width:100%; max-height:320px; background:#000; border-radius:8px; border:1px solid var(--rule)}
+  .rec-inline-close{position:absolute; top:6px; right:6px; width:30px; height:30px; border-radius:50%; border:none; background:rgba(0,0,0,0.7); color:#fff; font-size:16px; line-height:30px; text-align:center; cursor:pointer; padding:0; z-index:2}
+  .rec-inline-close:hover{background:rgba(255,0,0,0.8)}
 
   /* EPG (selected channel) */
   #epg-panel{border-top:1px solid var(--rule); padding-top:14px; margin-top:4px}
@@ -1244,6 +1246,7 @@ function playChannel(forceProfile){
     : 'Transcoding '+profile.toUpperCase()+'… (first load ~5s)';
 
   tearDownPlayer();
+  stopAllVideosExcept(video);
   attachStreamToVideo(video, info, status, selName);
 }
 function stopPlayer(){
@@ -1294,17 +1297,18 @@ function fmtDuration(secs){
   if(m>0) return m+'m '+s+'s';
   return s+'s';
 }
-function vlcDeepLink(absUrl){
-  // iOS: vlc-x-callback URL.
-  // Android: Chrome intent URL (vlc:// is unreliable — Chrome won't hand off to
-  //          VLC, and concatenating vlc://https://… creates an invalid scheme).
-  // Desktop: vlc:// prefix (works if the VLC protocol handler is registered).
+function vlcDeepLink(absUrl, name){
+  // iOS: vlc-x-callback URL — opens the URL directly in VLC for iOS.
+  // Android: Chrome intent URL targeting the VLC package.
+  // Desktop: link to a server-side .m3u wrapper. Browser downloads the .m3u
+  //          and the OS opens it in the default media player (VLC when it's
+  //          registered as the .m3u handler). This replaces the previous
+  //          vlc://… scheme which most desktop browsers silently dropped.
   const ua = navigator.userAgent;
   if(/iPhone|iPad|iPod/i.test(ua)){
     return 'vlc-x-callback://x-callback-url/stream?url='+encodeURIComponent(absUrl);
   }
   if(/Android/i.test(ua)){
-    // Strip the scheme — Chrome's intent URL builds its own from the `scheme=` param.
     const m = absUrl.match(/^([a-z]+):\/\/(.*)$/i);
     const scheme = m ? m[1] : 'https';
     const rest   = m ? m[2] : absUrl;
@@ -1315,31 +1319,80 @@ function vlcDeepLink(absUrl){
       +';S.browser_fallback_url='+encodeURIComponent(absUrl)
       +';end';
   }
-  return 'vlc://'+absUrl;
+  // Desktop
+  const q = '?url='+encodeURIComponent(absUrl)
+          + (name?('&name='+encodeURIComponent(name)):'');
+  return '/api/vlc.m3u'+q;
+}
+// Enforce single-video playback: pause & tear down every other <video> in
+// the page before starting a new one. Without this, quickly switching from
+// the live channel player to a recording leaves multiple streams playing
+// at once (audio overlap, wasted bandwidth).
+function stopAllVideosExcept(keep){
+  document.querySelectorAll('video').forEach(v=>{
+    if(v===keep) return;
+    try{v.pause();}catch(e){}
+    if(v._hls){try{v._hls.destroy();}catch(e){} v._hls=null;}
+    try{v.removeAttribute('src'); v.load();}catch(e){}
+  });
+  // Also clear the main channel player's hls.js instance if present.
+  if(window.currentHls && document.getElementById('video-player')!==keep){
+    try{window.currentHls.destroy();}catch(e){}
+    window.currentHls=null;
+  }
+  // Remove any inline player wrappers whose video we just killed.
+  document.querySelectorAll('.rec-inline-player').forEach(p=>{
+    const v=p.querySelector('video');
+    if(v && v!==keep && !v.src) p.remove();
+  });
 }
 function absoluteUrl(path){
   try{return new URL(path, window.location.origin).toString();}
   catch(e){return path;}
 }
+function closeInlinePlayer(cardId){
+  const card=document.getElementById(cardId);
+  if(!card) return;
+  const holder=card.querySelector('.rec-inline-player');
+  if(!holder) return;
+  const video=holder.querySelector('video');
+  if(video){
+    try{video.pause();}catch(e){}
+    if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
+    try{video.removeAttribute('src'); video.load();}catch(e){}
+  }
+  holder.remove();
+}
 function playRecordingInline(kind, src, cardId){
-  // kind: 'hls' for in-progress (live playlist), 'ts' for completed file.
+  // kind: 'hls' for in-progress (live playlist) or completed-remuxed HLS,
+  //        'ts' for direct .ts file.
   const card=document.getElementById(cardId);
   if(!card) return;
   let holder=card.querySelector('.rec-inline-player');
   if(!holder){
     holder=document.createElement('div');
     holder.className='rec-inline-player';
-    holder.innerHTML='<video controls autoplay playsinline></video>';
+    holder.innerHTML =
+      '<button class="rec-inline-close" title="Close" '
+      +  'onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
+      +'<video controls autoplay playsinline></video>';
     card.appendChild(holder);
   }
   const video=holder.querySelector('video');
+  // One-video-at-a-time: pause every other <video> on the page first.
+  stopAllVideosExcept(video);
   // Tear down any previous inline HLS instance on this card
   if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
   const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
   if(kind==='hls'){
     if(nativeHls){ video.src=src; }
     else if(window.Hls && window.Hls.isSupported()){
-      const h=new window.Hls({liveDurationInfinity:true});
+      // backBufferLength lets the user rewind through already-recorded segments
+      // on a live (event-type) HLS playlist.
+      const h=new window.Hls({
+        liveDurationInfinity:true,
+        backBufferLength:Infinity,
+      });
       h.loadSource(src); h.attachMedia(video);
       video._hls=h;
     }else{
@@ -1356,7 +1409,7 @@ function renderActiveRec(r, i){
   const remaining = r.remaining_secs!=null ? fmtDuration(r.remaining_secs)+' remaining' : '';
   const meta = [elapsed, remaining].filter(Boolean).join(' · ');
   const hasLive = !!r.live_hls_url;
-  const vlcLive = hasLive ? vlcDeepLink(absoluteUrl(r.live_hls_url)) : null;
+  const vlcLive = hasLive ? vlcDeepLink(absoluteUrl(r.live_hls_url), r.channel_name||'live') : null;
   return `
     <div class="rec-card live" id="${id}">
       <div class="rec-card-head">
@@ -1402,7 +1455,7 @@ function startRecordingPlay(hlsUrl, tsUrl, cardId){
 function renderCompletedRec(r, i){
   const id='rec-done-'+i;
   const abs=absoluteUrl(r.ts_url);
-  const vlc=vlcDeepLink(abs);
+  const vlc=vlcDeepLink(abs, r.filename||'recording');
   const hlsUrl=r.hls_url||null;
   return `
     <div class="rec-card" id="${id}">

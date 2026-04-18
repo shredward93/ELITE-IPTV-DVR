@@ -15,6 +15,12 @@
    - Docker container support
    - Environment variable configuration
 
+5. **Multistream mode** (future) — opt-in toggle at the top of the web UI, off by default.
+   When enabled, relaxes the one-video-at-a-time rule and lets the user open a
+   second player pane so two channels (or a channel + a recording) can play side
+   by side — a simple dual-screen layout with independent audio selection.
+   Extend later to more panes if it proves useful.
+
 ---
 
 ## Recommended Module Structure

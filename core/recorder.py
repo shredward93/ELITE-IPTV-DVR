@@ -2,6 +2,7 @@ import subprocess
 import datetime
 import os
 import shutil
+import threading
 import time
 
 import config
@@ -97,12 +98,17 @@ def run_job(job):
                 "-f", "hls",
                 "-hls_time", "4",
                 "-hls_list_size", "0",
+                "-hls_playlist_type", "event",   # seekable growing playlist for mid-recording playback
                 "-hls_flags", "program_date_time",
                 "-hls_segment_type", "mpegts",
                 "-hls_segment_filename", os.path.join(live_dir, "seg_%06d.ts"),
                 os.path.join(live_dir, "playlist.m3u8"),
             ]
 
+        # -t MUST go before -i so it limits input duration (applies to every
+        # output). Placed as an output option it only caps the first output;
+        # the HLS output then has no end, ffmpeg never exits, and communicate()
+        # blocks past the scheduled duration.
         cmd = [
             "ffmpeg", "-y",
             "-reconnect", "1",
@@ -110,8 +116,8 @@ def run_job(job):
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
             "-timeout", "15000000",   # 15 s socket read timeout (microseconds)
-            "-i", stream_url,
             "-t", str(int(remaining)),
+            "-i", stream_url,
             "-c", "copy",
             out,
             *live_hls_args,
@@ -122,7 +128,42 @@ def run_job(job):
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 **config._SUBPROCESS_FLAGS,
             )
+
+            # Wallclock watchdog: force-kill ffmpeg if it runs more than 30 s
+            # past the scheduled remaining duration. Cheap insurance in case
+            # reconnect/retry loops make content-time < wallclock-time.
+            _wd_stop = threading.Event()
+            _wd_deadline = time.time() + int(remaining) + 30
+
+            def _watchdog(proc, deadline, stop_evt):
+                while not stop_evt.is_set():
+                    if proc.poll() is not None:
+                        return
+                    if time.time() >= deadline:
+                        try:
+                            proc.terminate()
+                        except Exception:
+                            pass
+                        # Give ffmpeg 5 s to exit cleanly, then SIGKILL.
+                        for _ in range(50):
+                            if proc.poll() is not None:
+                                return
+                            time.sleep(0.1)
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                        return
+                    time.sleep(1)
+
+            threading.Thread(
+                target=_watchdog,
+                args=(job.process, _wd_deadline, _wd_stop),
+                daemon=True,
+            ).start()
+
             _, stderr_bytes = job.process.communicate()
+            _wd_stop.set()
             retcode = job.process.returncode
             if retcode != 0 and stderr_bytes:
                 err_text = stderr_bytes[-8192:].decode("utf-8", errors="replace")

@@ -14,6 +14,10 @@ The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favor
 - **Setup Wizard & Settings:** First-run onboarding to save XtreamCodes credentials and tunnel configurations.
 - **Auto-Dependency Check:** On Windows, the app can prompt to install FFmpeg via `winget` if needed.
 
+### Planned
+
+- **Multistream mode (toggle, off by default):** An opt-in switch at the top of the web UI that relaxes the one-video-at-a-time rule and lets the user open a second player pane so two channels — or a channel plus a recording — can play side by side (dual-screen layout, per-pane audio).
+
 ## Screenshots
 
 ![Desktop UI](Screenshots/Screenshot%202026-04-10%20134911.png)

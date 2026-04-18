@@ -466,6 +466,36 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 "low_url":         f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=low",
             })
 
+        # ── VLC launcher: wrap any URL in a 1-entry .m3u the OS hands to VLC ──
+        # Browsers/OSes open .m3u files in the default media player (VLC on
+        # most desktops). Mobile deep-link schemes handle the mobile case;
+        # this endpoint is the desktop + generic-fallback path.
+        elif path == "/api/vlc.m3u":
+            target = qs.get("url", [""])[0]
+            name   = qs.get("name", ["stream"])[0]
+            if not target:
+                self._error(400, "url required")
+                return
+            # If the client sent a relative path, anchor it to this server.
+            if target.startswith("/"):
+                host   = self.headers.get("Host", "")
+                scheme = "https" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else "http"
+                target = f"{scheme}://{host}{target}" if host else target
+            body = ("#EXTM3U\n"
+                    f"#EXTINF:-1,{name}\n"
+                    f"{target}\n").encode("utf-8")
+            safe_name = re.sub(r"[^\w.\-]", "_", name) or "stream"
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/x-mpegurl")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}.m3u"')
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         # ── DVR status & segment list ─────────────────────────────────────────
         elif path == "/dvr/status":
             if self.ctx.dvr_manager:

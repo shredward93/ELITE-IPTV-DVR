@@ -1243,8 +1243,15 @@ class RemoteHandler(BaseHTTPRequestHandler):
         if needs_remux:
             if leaf == "index.m3u8":
                 sess = _RecordingHlsCache.get_or_start(filename, ts_path)
-                ready = _RecordingHlsCache.wait_for_startup(sess)
-                if not ready or sess.failed:
+                if not sess.completed:
+                    # Wait for the full transcode so the playlist contains
+                    # #EXT-X-ENDLIST and hls.js treats it as a seekable VOD
+                    # rather than a growing live stream. Audio-only transcode
+                    # runs at 50-100x realtime (video is copied), so a 2-hour
+                    # recording typically waits 60-120s on first play.
+                    print(f"[RecHLS] Waiting for full transcode of '{filename}'…")
+                    sess.done_event.wait(timeout=300)
+                if sess.failed:
                     self._error(503, f"Remux failed: {sess.error_tail[:200]}"); return
                 m3u8_path = os.path.join(sess.outdir, "index.m3u8")
                 try:
@@ -1252,6 +1259,9 @@ class RemoteHandler(BaseHTTPRequestHandler):
                         data = f.read()
                 except OSError as exc:
                     self._error(500, f"Could not read remux playlist: {exc}"); return
+                # Rewrite EVENT → VOD so hls.js enables full random-access seeking.
+                data = data.replace(b"#EXT-X-PLAYLIST-TYPE:EVENT",
+                                    b"#EXT-X-PLAYLIST-TYPE:VOD")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.apple.mpegurl")
                 self.send_header("Content-Length", str(len(data)))

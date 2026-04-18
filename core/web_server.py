@@ -393,6 +393,10 @@ class RemoteHandler(BaseHTTPRequestHandler):
         elif path == "/kodi/guide.xml":
             self._serve_kodi_xmltv()
 
+        # ── Live HLS for in-progress recordings ──────────────────────────────
+        elif path.startswith("/recordings/live/"):
+            self._serve_recording_live(path)
+
         # ── Completed recordings list ─────────────────────────────────────────
         elif path == "/recordings" or path == "/recordings/":
             ua = self.headers.get("User-Agent", "")
@@ -430,6 +434,10 @@ class RemoteHandler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         """Handle HEAD requests — Kodi uses these to get file sizes before playback."""
         path = urlparse(self.path).path
+        if path.startswith("/recordings/live/"):
+            self.send_response(200)
+            self.end_headers()
+            return
         if path.startswith("/recordings/"):
             file_name = unquote(path[len("/recordings/"):])
             if not file_name or "/" in file_name or ".." in file_name:
@@ -648,6 +656,41 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
+    def _serve_recording_live(self, path: str):
+        parts = path.split("/")
+        # /recordings/live/{job_id}/filename → 5 parts after split
+        if len(parts) != 5:
+            self._error(404, "not found")
+            return
+        _, _, _, job_id_str, filename = parts
+        if not re.match(r'^(playlist\.m3u8|seg_\d+\.ts)$', filename):
+            self._error(404, "not found")
+            return
+        live_dir  = os.path.join(config.DVR_BUFFER_DIR, f"live_{job_id_str}")
+        file_path = os.path.join(live_dir, filename)
+        if not os.path.exists(file_path):
+            self._error(404, "not found")
+            return
+        if filename.endswith(".m3u8"):
+            try:
+                with open(file_path, "rb") as f:
+                    data = f.read()
+            except OSError:
+                self._error(404, "not found")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self._serve_file_range(file_path)
+
     def _list_recordings(self) -> list:
         if not self.ctx.get_recordings_dir:
             return []
@@ -674,6 +717,13 @@ class RemoteHandler(BaseHTTPRequestHandler):
             "<html><head><title>ELITE IPTV DVR Recordings</title></head>",
             "<body><h1>Recordings</h1><ul>"
         ]
+        # Prepend live recordings (in-progress jobs with active HLS)
+        if self.ctx.get_jobs:
+            for job in self.ctx.get_jobs():
+                if job.status == "recording" and getattr(job, "live_dir", None):
+                    label = f"🔴 LIVE — {job.channel_name}"
+                    href  = f"live/{job.id}/playlist.m3u8"
+                    lines.append(f'<li><a href="{href}">{label}</a></li>')
         for rec in recordings:
             filename = rec["filename"]
             from urllib.parse import quote

@@ -616,8 +616,10 @@ class IPTVRecorderApp(ctk.CTk):
                 remaining = max(0, job_duration_secs(job) - elapsed)
                 txt = (f"RECORDING  •  {str(datetime.timedelta(seconds=elapsed))} elapsed  •  "
                        f"{str(datetime.timedelta(seconds=remaining))} remaining")
+                live_url = f"/recordings/live/{job.id}/playlist.m3u8" if getattr(job, "live_dir", None) else None
                 recordings.append({"name": job.channel_name, "status": job.status,
-                                   "status_text": txt, "stoppable": True})
+                                   "status_text": txt, "stoppable": True,
+                                   "live_hls_url": live_url})
             else:
                 secs = max(0, int((job.start_time - now).total_seconds()))
                 recordings.append({"name": job.channel_name, "status": job.status,

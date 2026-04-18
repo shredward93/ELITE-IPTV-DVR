@@ -945,7 +945,10 @@ function refreshStatus(){
       <div class="card${r.status==='recording'?' active-rec':''}">
         <div class="card-name">${esc(r.name)}</div>
         <div class="card-status${r.status==='recording'?' rec-status':''}">${esc(r.status_text)}</div>
-        ${r.stoppable?`<button class="btn ghost btn-sm" onclick="stopJob(${i})">Stop</button>`:''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          ${r.stoppable?`<button class="btn ghost btn-sm" onclick="stopJob(${i})">Stop</button>`:''}
+          ${r.live_hls_url?`<a class="btn ghost btn-sm" href="${r.live_hls_url}" target="_blank">▶ Watch Live (Kodi URL)</a>`:''}
+        </div>
       </div>`).join('');
   }).catch(()=>{});
 }

@@ -1,6 +1,7 @@
 import subprocess
 import datetime
 import os
+import shutil
 import time
 
 import config
@@ -31,6 +32,8 @@ class RecordingJob:
         self.backup_channel_id   = None
         self.backup_channel_name = None
         self.active_channel_name = channel_name
+
+        self.live_dir = None  # path to HLS segment dir while recording is active
 
         self._pending_logs = []   # log lines queued by bg thread, drained by UI tick
 
@@ -84,6 +87,22 @@ def run_job(job):
         out = f"{base_path}.ts" if segment == 0 else f"{base_path}_part{segment}.ts"
         job.output_file = out
 
+        live_hls_args = []
+        if segment == 0:
+            live_dir = os.path.join(config.DVR_BUFFER_DIR, f"live_{job.id}")
+            os.makedirs(live_dir, exist_ok=True)
+            job.live_dir = live_dir
+            live_hls_args = [
+                "-c", "copy",
+                "-f", "hls",
+                "-hls_time", "4",
+                "-hls_list_size", "0",
+                "-hls_flags", "program_date_time",
+                "-hls_segment_type", "mpegts",
+                "-hls_segment_filename", os.path.join(live_dir, "seg_%06d.ts"),
+                os.path.join(live_dir, "playlist.m3u8"),
+            ]
+
         cmd = [
             "ffmpeg", "-y",
             "-reconnect", "1",
@@ -95,6 +114,7 @@ def run_job(job):
             "-t", str(int(remaining)),
             "-c", "copy",
             out,
+            *live_hls_args,
         ]
 
         try:
@@ -208,5 +228,12 @@ def run_job(job):
             job.finish_msg = ("Recording complete.", "#2ecc71")
     else:
         job.finish_msg = ("Recording complete.", "#2ecc71")
+
+    if job.live_dir and os.path.isdir(job.live_dir):
+        try:
+            shutil.rmtree(job.live_dir)
+        except OSError:
+            pass
+        job.live_dir = None
 
     job.status = "complete"

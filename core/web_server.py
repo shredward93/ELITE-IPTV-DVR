@@ -15,7 +15,7 @@ import threading
 
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 import config
 
@@ -403,7 +403,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         # ── Completed recording file serving ──────────────────────────────────
         elif path.startswith("/recordings/"):
-            file_name = path[len("/recordings/"):]
+            file_name = unquote(path[len("/recordings/"):])
             ua = self.headers.get("User-Agent", "")
             print(f"[Recordings] File request: {file_name!r} UA: {ua!r}")
             if not file_name or "/" in file_name or ".." in file_name:
@@ -431,7 +431,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
         """Handle HEAD requests — Kodi uses these to get file sizes before playback."""
         path = urlparse(self.path).path
         if path.startswith("/recordings/"):
-            file_name = path[len("/recordings/"):]
+            file_name = unquote(path[len("/recordings/"):])
             if not file_name or "/" in file_name or ".." in file_name:
                 self.send_response(400)
                 self.end_headers()

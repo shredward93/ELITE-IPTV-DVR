@@ -157,7 +157,8 @@ class HeadlessServer:
     def _web_get_favorites(self) -> list[dict]:
         """Return favorites for web API."""
         from core.favorites import load_favorites
-        return load_favorites()
+        import config
+        return load_favorites(config.FAVORITES_FILE)
 
     def _web_get_jobs(self) -> list[RecordingJob]:
         return self.recording_jobs
@@ -259,20 +260,22 @@ class HeadlessServer:
                         self._persist_recording_jobs()
             elif action["type"] == "fav_add":
                 from core.favorites import load_favorites, save_favorites
-                favorites = load_favorites()
+                import config
+                favorites = load_favorites(config.FAVORITES_FILE)
                 name = action.get("name")
                 cid = action.get("id")
                 if name and cid and not any(f["name"] == name for f in favorites):
                     favorites.append({"name": name, "id": cid})
-                    save_favorites(favorites)
+                    save_favorites(config.FAVORITES_FILE, favorites)
                     self._log(f"[Remote] Saved channel: '{name}'")
             elif action["type"] == "fav_remove":
                 from core.favorites import load_favorites, save_favorites
-                favorites = load_favorites()
+                import config
+                favorites = load_favorites(config.FAVORITES_FILE)
                 name = action.get("name")
                 if name:
                     favorites = [f for f in favorites if f["name"] != name]
-                    save_favorites(favorites)
+                    save_favorites(config.FAVORITES_FILE, favorites)
                     self._log(f"[Remote] Removed channel: '{name}'")
             elif action["type"] == "backup_set":
                 self._log(f"[Remote] Set backup channel: '{action.get('name')}'")

@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" defer></script>
 <style>
   :root{
     --ink:#0a0a0c; --ink-soft:#101014;
@@ -230,9 +231,50 @@
 
   /* VIDEO PLAYER */
   #player-panel{margin:0 0 14px}
-  #video-player{width:100%; max-height:320px; background:#000; border-radius:10px; border:1px solid var(--rule)}
-  .player-ctrl{display:flex; align-items:center; gap:10px; margin-top:8px}
-  #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted)}
+  #video-player{width:100%; max-height:360px; background:#000; border-radius:10px; border:1px solid var(--rule)}
+  .player-ctrl{display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap}
+  #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .quality-group{display:flex; align-items:center; gap:4px; flex-wrap:wrap}
+  .quality-group .qlabel{font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.08em; color:var(--paper-muted); text-transform:uppercase; margin-right:4px}
+  .qbtn{
+    background:transparent; color:var(--paper-2);
+    border:1px solid var(--rule); border-radius:14px;
+    padding:5px 10px; font-size:11px; font-family:'JetBrains Mono',monospace;
+    cursor:pointer; letter-spacing:0.02em; transition:all .15s ease;
+  }
+  .qbtn:hover{border-color:var(--paper-muted); color:var(--paper)}
+  .qbtn.active{background:var(--signal); color:var(--ink); border-color:var(--signal); font-weight:600}
+
+  /* RECORDINGS PANE */
+  .rec-section-title{
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em;
+    color:var(--paper-muted); text-transform:uppercase;
+    margin:14px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--rule);
+  }
+  .rec-section-title:first-child{margin-top:4px}
+  .rec-card{
+    background:var(--surface); border:1px solid var(--rule); border-radius:var(--radius);
+    padding:12px; margin-bottom:8px; position:relative;
+  }
+  .rec-card.live{border-color:var(--live); box-shadow:0 0 0 1px rgba(255,46,77,.25)}
+  .rec-card-head{display:flex; align-items:baseline; gap:8px; margin-bottom:6px; flex-wrap:wrap}
+  .rec-card-name{font-size:14px; font-weight:600; color:var(--paper); flex:1; min-width:0; word-break:break-word}
+  .rec-live-badge{
+    background:var(--live); color:#fff; font-size:9px; font-weight:700;
+    letter-spacing:0.08em; padding:2px 7px; border-radius:3px;
+    text-transform:uppercase; font-family:'JetBrains Mono',monospace;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .rec-live-badge::before{
+    content:''; width:5px; height:5px; border-radius:50%;
+    background:#fff; animation:pulse 1.4s ease-in-out infinite;
+  }
+  .rec-meta{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); margin-bottom:8px}
+  .rec-actions{display:flex; gap:6px; flex-wrap:wrap}
+  .rec-actions .btn{padding:7px 11px; font-size:12px}
+  .rec-actions a.btn{text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
+  .rec-inline-player{margin-top:10px}
+  .rec-inline-player video{width:100%; max-height:320px; background:#000; border-radius:8px; border:1px solid var(--rule)}
 
   /* EPG (selected channel) */
   #epg-panel{border-top:1px solid var(--rule); padding-top:14px; margin-top:4px}
@@ -578,6 +620,14 @@
         <video id="video-player" controls autoplay playsinline></video>
         <div class="player-ctrl">
           <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
+          <div class="quality-group" id="quality-group">
+            <span class="qlabel">Quality</span>
+            <button class="qbtn" data-profile="auto">Auto</button>
+            <button class="qbtn" data-profile="low">Low</button>
+            <button class="qbtn" data-profile="mobile">Mobile</button>
+            <button class="qbtn" data-profile="hd">HD</button>
+            <button class="qbtn" data-profile="original">Orig</button>
+          </div>
           <span id="player-status"></span>
         </div>
       </div>
@@ -604,10 +654,10 @@
 
     <section id="pane-recs" class="pane">
       <div class="pane-head">
-        <h2 class="pane-title">Active Recordings</h2>
-        <span class="pane-meta">Live</span>
+        <h2 class="pane-title">Recordings</h2>
+        <button class="mini-btn" onclick="refreshRecordings()">↻  Refresh</button>
       </div>
-      <div id="recordings"><div class="empty">No active recordings</div></div>
+      <div id="recordings"><div class="empty">Loading recordings…</div></div>
     </section>
 
     <section id="pane-favs" class="pane">
@@ -908,21 +958,21 @@ function refreshStatus(){
     }else{
       bDisp.style.display='none';
     }
-    const el=document.getElementById('recordings');
-    const count=d.recordings.length;
+    // Banner + LED + tab count are driven by active/waiting jobs from /api/status.
+    // The detailed recordings pane (active + completed files) is owned by refreshRecordings().
     const recCountEl=document.getElementById('rec-count');
     const led=document.getElementById('status-led');
     const activeRecs=d.recordings.filter(r=>r.status==='recording'&&r.stoppable);
     const anyRecording=activeRecs.length>0;
-    if(count){
-      recCountEl.textContent=count;
+    const activeOrWaiting=d.recordings.filter(r=>r.stoppable).length;
+    if(activeOrWaiting){
+      recCountEl.textContent=activeOrWaiting;
       recCountEl.className=anyRecording?'count live':'count';
     }else{
       recCountEl.textContent='';
       recCountEl.className='count';
     }
     led.classList.toggle('live', anyRecording);
-    // Recording banner
     const banner=document.getElementById('rec-banner');
     const bannerName=document.getElementById('rec-banner-name');
     const bannerStop=document.getElementById('rec-banner-stop');
@@ -940,16 +990,6 @@ function refreshStatus(){
     }else{
       banner.classList.remove('visible');
     }
-    if(!count){el.innerHTML='<div class="empty">No active recordings</div>';return}
-    el.innerHTML=d.recordings.map((r,i)=>`
-      <div class="card${r.status==='recording'?' active-rec':''}">
-        <div class="card-name">${esc(r.name)}</div>
-        <div class="card-status${r.status==='recording'?' rec-status':''}">${esc(r.status_text)}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${r.stoppable?`<button class="btn ghost btn-sm" onclick="stopJob(${i})">Stop</button>`:''}
-          ${r.live_hls_url?`<a class="btn ghost btn-sm" href="${r.live_hls_url}" target="_blank">▶ Watch Live (Kodi URL)</a>`:''}
-        </div>
-      </div>`).join('');
   }).catch(()=>{});
 }
 
@@ -1074,6 +1114,7 @@ function confirmSchedule(){
     closeModal();
     toast(d.message || (isRecordNow?'Recording started':'Scheduled'));
     refreshStatus();
+    refreshRecordings();
     switchTab('recs');
   }).catch(()=>toast('Error'));
 }
@@ -1087,13 +1128,13 @@ function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refr
 function stopJob(i){
   if(!confirm('Stop this recording?'))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
-    .then(()=>{refreshStatus();toast('Stop requested');});
+    .then(()=>{refreshStatus();refreshRecordings();toast('Stop requested');});
 }
 function stopJobFromBanner(){
   const i=parseInt(document.getElementById('rec-banner-stop').dataset.index||'0');
   if(!confirm('Stop this recording?'))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
-    .then(()=>{refreshStatus();toast('Stop requested');});
+    .then(()=>{refreshStatus();refreshRecordings();toast('Stop requested');});
 }
 
 /* ═══ LOG ═══ */
@@ -1105,37 +1146,253 @@ function refreshLog(){
 }
 
 /* ═══ PLAYER ═══ */
-let currentStreamUrl=null;
-function playChannel(){
+let currentHls=null;
+let currentProfile=null;       // active profile: 'mobile'|'hd'|'low'|'original'
+let currentChannelForPlayer=null;
+
+function isMobileUA(){
+  return /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(navigator.userAgent);
+}
+function resolveProfile(choice){
+  // "auto" → mobile on mobile UA, original on desktop.
+  if(choice==='auto' || !choice) return isMobileUA() ? 'mobile' : 'original';
+  return choice;
+}
+function savedProfile(){
+  try{return localStorage.getItem('eliteQuality') || 'auto';}catch(e){return 'auto';}
+}
+function saveProfile(p){
+  try{localStorage.setItem('eliteQuality', p);}catch(e){}
+}
+function setActiveQualityBtn(profile){
+  document.querySelectorAll('#quality-group .qbtn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.profile===profile);
+  });
+}
+function buildStreamUrl(channelId, profile){
+  // Same-origin relative URLs so the Cloudflare tunnel forwards them correctly.
+  if(profile==='original'){
+    return {url:'/api/stream/live?channel_id='+encodeURIComponent(channelId), type:'ts'};
+  }
+  return {
+    url:'/api/stream/mobile.m3u8?channel_id='+encodeURIComponent(channelId)+'&profile='+encodeURIComponent(profile),
+    type:'hls',
+  };
+}
+function tearDownPlayer(){
+  const video=document.getElementById('video-player');
+  try{video.pause();}catch(e){}
+  if(currentHls){
+    try{currentHls.destroy();}catch(e){}
+    currentHls=null;
+  }
+  video.removeAttribute('src');
+  try{video.load();}catch(e){}
+}
+function attachStreamToVideo(video, info, status, channelName){
+  const nativeHls = video.canPlayType('application/vnd.apple.mpegurl');
+  if(info.type==='hls'){
+    if(nativeHls){
+      video.src=info.url;
+      video.play().catch(()=>{status.textContent='Tap ▶ to start';});
+    }else if(window.Hls && window.Hls.isSupported()){
+      currentHls=new window.Hls({
+        liveDurationInfinity:true,
+        lowLatencyMode:false,
+        backBufferLength:30,
+        maxBufferLength:20,
+      });
+      currentHls.loadSource(info.url);
+      currentHls.attachMedia(video);
+      currentHls.on(window.Hls.Events.MANIFEST_PARSED, ()=>{
+        video.play().catch(()=>{status.textContent='Tap ▶ to start';});
+      });
+      currentHls.on(window.Hls.Events.ERROR, (_,data)=>{
+        if(data.fatal){
+          status.textContent='HLS error: '+data.type;
+        }
+      });
+    }else{
+      status.textContent='HLS not supported in this browser';
+    }
+  }else{
+    // Raw .ts passthrough
+    video.src=info.url;
+    video.play().catch(()=>{status.textContent='Tap ▶ to start';});
+  }
+  video.onplaying=()=>{
+    status.textContent='Playing'+(channelName?(' · '+channelName):'');
+  };
+  video.onerror=()=>{status.textContent='Stream error — try another quality';};
+}
+function playChannel(forceProfile){
   if(!selId){toast('Select a channel first');return;}
   const video=document.getElementById('video-player');
   const panel=document.getElementById('player-panel');
   const status=document.getElementById('player-status');
-  fetch('/api/stream/url?channel_id='+encodeURIComponent(selId))
-    .then(r=>r.json())
-    .then(d=>{
-      if(!d.proxy_url)throw new Error('No stream URL');
-      currentStreamUrl=d.proxy_url;
-      panel.style.display='block';
-      status.textContent='Loading stream…';
-      video.src=currentStreamUrl;
-      video.play().then(()=>{
-        status.textContent='Playing: '+(d.channel_name||selName);
-      }).catch(()=>{status.textContent='Playback error'});
-      video.onerror=()=>{status.textContent='Stream error';};
-    })
-    .catch(err=>toast('Stream failed: '+err.message));
+
+  const choice   = forceProfile || savedProfile();
+  const profile  = resolveProfile(choice);
+  currentProfile = profile;
+  currentChannelForPlayer = {id:selId, name:selName};
+  setActiveQualityBtn(choice);
+
+  const info = buildStreamUrl(selId, profile);
+  panel.style.display='block';
+  status.textContent = profile==='original'
+    ? 'Loading original stream…'
+    : 'Transcoding '+profile.toUpperCase()+'… (first load ~5s)';
+
+  tearDownPlayer();
+  attachStreamToVideo(video, info, status, selName);
 }
 function stopPlayer(){
-  const video=document.getElementById('video-player');
   const panel=document.getElementById('player-panel');
   const status=document.getElementById('player-status');
-  video.pause();
-  video.src='';
-  video.load();
-  currentStreamUrl=null;
+  tearDownPlayer();
   panel.style.display='none';
   status.textContent='';
+  currentProfile=null;
+  currentChannelForPlayer=null;
+}
+function setupQualityButtons(){
+  const group=document.getElementById('quality-group');
+  if(!group) return;
+  group.addEventListener('click', (e)=>{
+    const btn=e.target.closest('.qbtn');
+    if(!btn) return;
+    const choice=btn.dataset.profile;
+    saveProfile(choice);
+    setActiveQualityBtn(choice);
+    if(currentChannelForPlayer){
+      playChannel(choice);
+    }
+  });
+  setActiveQualityBtn(savedProfile());
+}
+
+/* ═══ RECORDINGS PANE ═══ */
+function fmtBytes(b){
+  if(!b && b!==0) return '';
+  const u=['B','KB','MB','GB','TB'];
+  let i=0, n=b;
+  while(n>=1024 && i<u.length-1){n/=1024; i++;}
+  return n.toFixed(n<10?1:0)+' '+u[i];
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  const d=new Date(iso);
+  if(isNaN(d)) return iso;
+  return d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function fmtDuration(secs){
+  if(!secs || secs<0) return '';
+  const h=Math.floor(secs/3600);
+  const m=Math.floor((secs%3600)/60);
+  const s=Math.floor(secs%60);
+  if(h>0) return h+'h '+m+'m';
+  if(m>0) return m+'m '+s+'s';
+  return s+'s';
+}
+function vlcDeepLink(absUrl){
+  // iOS: vlc-x-callback URL.  Android + desktop: vlc:// prefix (most VLC builds register it).
+  const ua = navigator.userAgent;
+  if(/iPhone|iPad|iPod/i.test(ua)){
+    return 'vlc-x-callback://x-callback-url/stream?url='+encodeURIComponent(absUrl);
+  }
+  return 'vlc://'+absUrl;
+}
+function absoluteUrl(path){
+  try{return new URL(path, window.location.origin).toString();}
+  catch(e){return path;}
+}
+function playRecordingInline(kind, src, cardId){
+  // kind: 'hls' for in-progress (live playlist), 'ts' for completed file.
+  const card=document.getElementById(cardId);
+  if(!card) return;
+  let holder=card.querySelector('.rec-inline-player');
+  if(!holder){
+    holder=document.createElement('div');
+    holder.className='rec-inline-player';
+    holder.innerHTML='<video controls autoplay playsinline></video>';
+    card.appendChild(holder);
+  }
+  const video=holder.querySelector('video');
+  // Tear down any previous inline HLS instance on this card
+  if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
+  const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
+  if(kind==='hls'){
+    if(nativeHls){ video.src=src; }
+    else if(window.Hls && window.Hls.isSupported()){
+      const h=new window.Hls({liveDurationInfinity:true});
+      h.loadSource(src); h.attachMedia(video);
+      video._hls=h;
+    }else{
+      video.src=src; // best effort
+    }
+  }else{
+    video.src=src;
+  }
+  video.play().catch(()=>{});
+}
+function renderActiveRec(r, i){
+  const id='rec-active-'+i;
+  const elapsed = r.elapsed_secs!=null ? fmtDuration(r.elapsed_secs)+' elapsed' : '';
+  const remaining = r.remaining_secs!=null ? fmtDuration(r.remaining_secs)+' remaining' : '';
+  const meta = [elapsed, remaining].filter(Boolean).join(' · ');
+  const hasLive = !!r.live_hls_url;
+  const vlcLive = hasLive ? vlcDeepLink(absoluteUrl(r.live_hls_url)) : null;
+  return `
+    <div class="rec-card live" id="${id}">
+      <div class="rec-card-head">
+        <span class="rec-card-name">${esc(r.channel_name)}</span>
+        <span class="rec-live-badge">REC</span>
+      </div>
+      ${meta?`<div class="rec-meta">${esc(meta)}</div>`:''}
+      <div class="rec-actions">
+        ${hasLive?`<button class="btn primary btn-sm" onclick="playRecordingInline('hls','${esc(r.live_hls_url)}','${id}')">▶  Watch Live</button>`:''}
+        ${vlcLive?`<a class="btn ghost btn-sm" href="${esc(vlcLive)}">Open in VLC</a>`:''}
+        ${r.stoppable!==false?`<button class="btn danger btn-sm" onclick="stopJob(${r.index})">■  Stop</button>`:''}
+      </div>
+    </div>`;
+}
+function renderCompletedRec(r, i){
+  const id='rec-done-'+i;
+  const abs=absoluteUrl(r.ts_url);
+  const vlc=vlcDeepLink(abs);
+  return `
+    <div class="rec-card" id="${id}">
+      <div class="rec-card-head">
+        <span class="rec-card-name">${esc(r.filename)}</span>
+      </div>
+      <div class="rec-meta">${esc(fmtDate(r.recorded_at))} · ${esc(fmtBytes(r.size_bytes))}</div>
+      <div class="rec-actions">
+        <button class="btn primary btn-sm" onclick="playRecordingInline('ts','${esc(r.ts_url)}','${id}')">▶  Play</button>
+        <a class="btn ghost btn-sm" href="${esc(vlc)}">Open in VLC</a>
+        <a class="btn ghost btn-sm" href="${esc(r.download_url)}" download>⤓  Download</a>
+      </div>
+    </div>`;
+}
+function refreshRecordings(){
+  fetch('/api/recordings').then(r=>r.json()).then(d=>{
+    const el=document.getElementById('recordings');
+    const active    = Array.isArray(d.active)    ? d.active    : [];
+    const completed = Array.isArray(d.completed) ? d.completed : [];
+    if(!active.length && !completed.length){
+      el.innerHTML='<div class="empty">No recordings yet — start one from a channel above.</div>';
+      return;
+    }
+    const parts=[];
+    if(active.length){
+      parts.push('<div class="rec-section-title">Active · '+active.length+'</div>');
+      parts.push(active.map(renderActiveRec).join(''));
+    }
+    if(completed.length){
+      parts.push('<div class="rec-section-title">Completed · '+completed.length+'</div>');
+      parts.push(completed.map(renderCompletedRec).join(''));
+    }
+    el.innerHTML=parts.join('');
+  }).catch(()=>{});
 }
 
 document.getElementById('overlay').addEventListener('click',e=>{
@@ -1143,9 +1400,11 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 
 /* ═══ BOOT ═══ */
-refreshStatus();refreshFavs();refreshGuide();
+setupQualityButtons();
+refreshStatus();refreshFavs();refreshGuide();refreshRecordings();
 setInterval(refreshStatus,2000);
 setInterval(refreshFavs,20000);
+setInterval(refreshRecordings,5000);
 setInterval(()=>{if(!guideLoading)refreshGuide(false)},600000);
 setInterval(()=>{if(logOpen)refreshLog()},5000);
 </script>

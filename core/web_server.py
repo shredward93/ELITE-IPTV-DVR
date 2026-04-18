@@ -12,6 +12,7 @@ import os
 import re
 import socket
 import threading
+import time
 
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,7 @@ import config
 # DVRManager imported for type hints only; no circular dependency risk.
 from core.dvr_manager import DVRManager
 from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg, filter_guide_categories
+from core.mobile_transcode import manager as mobile_transcode_manager
 from core.recorder import job_duration_secs
 
 
@@ -337,6 +339,46 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 self._error(400, "channel_id required")
                 return
             self._proxy_live_stream(channel_id)
+
+        # ── Mobile webapp: transcoded HLS playlist ────────────────────────────
+        elif path == "/api/stream/mobile.m3u8":
+            channel_id = qs.get("channel_id", [""])[0]
+            profile    = qs.get("profile",    ["mobile"])[0]
+            if not channel_id:
+                self._error(400, "channel_id required")
+                return
+            self._serve_mobile_playlist(channel_id, profile)
+
+        # ── Mobile webapp: transcoded HLS segments ────────────────────────────
+        # /api/stream/mobile/<channel_id>/<profile>/seg_NNNNN.ts
+        elif path.startswith("/api/stream/mobile/"):
+            self._serve_mobile_segment(path)
+
+        # ── Mobile webapp: playback-info helper (URL + encoder + profiles) ────
+        elif path == "/api/stream/info":
+            channel_id = qs.get("channel_id", [""])[0]
+            if not channel_id:
+                self._error(400, "channel_id required")
+                return
+            name = channel_id
+            if self.ctx.get_all_channels:
+                try:
+                    name = next(
+                        (ch["name"] for ch in self.ctx.get_all_channels()
+                         if str(ch["id"]) == str(channel_id)),
+                        channel_id,
+                    )
+                except Exception:
+                    pass
+            self._json({
+                "channel_name":    name,
+                "encoder":         mobile_transcode_manager.encoder,
+                "profiles":        ["original", "hd", "mobile", "low"],
+                "original_url":    f"/api/stream/live?channel_id={channel_id}",
+                "mobile_url":      f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=mobile",
+                "hd_url":          f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=hd",
+                "low_url":         f"/api/stream/mobile.m3u8?channel_id={channel_id}&profile=low",
+            })
 
         # ── DVR status & segment list ─────────────────────────────────────────
         elif path == "/dvr/status":
@@ -691,6 +733,80 @@ class RemoteHandler(BaseHTTPRequestHandler):
         else:
             self._serve_file_range(file_path)
 
+    # ── Mobile transcode serving ────────────────────────────────────────────
+    def _serve_mobile_playlist(self, channel_id: str, profile: str) -> None:
+        """
+        Ensure a transcode session is running, wait briefly for it to warm
+        up, then serve the HLS playlist. Rewrites segment URLs to a same-
+        origin path that the segment endpoint can parse.
+        """
+        sess = mobile_transcode_manager.ensure_session(channel_id, profile)
+        if sess is None:
+            self._error(503, "transcoder at capacity, try again shortly")
+            return
+        if not mobile_transcode_manager.wait_for_playlist(sess):
+            self._error(504, "transcoder warmup timeout")
+            return
+
+        pl_path = os.path.join(sess.dir, "index.m3u8")
+        try:
+            with open(pl_path, "r", encoding="utf-8", errors="replace") as f:
+                raw = f.read()
+        except OSError:
+            self._error(404, "playlist not ready")
+            return
+
+        # Rewrite bare "seg_NNNNN.ts" lines to an absolute same-origin path
+        # the segment endpoint can route to the right session.
+        prefix = f"/api/stream/mobile/{channel_id}/{profile}/"
+        rewritten_lines = []
+        for line in raw.splitlines():
+            if line and not line.startswith("#") and line.endswith(".ts"):
+                rewritten_lines.append(prefix + line.strip())
+            else:
+                rewritten_lines.append(line)
+        body = ("\n".join(rewritten_lines) + "\n").encode("utf-8")
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _serve_mobile_segment(self, path: str) -> None:
+        """Serve a single .ts segment from a running transcode session."""
+        # Expected: /api/stream/mobile/<channel_id>/<profile>/seg_NNNNN.ts
+        m = re.match(
+            r"^/api/stream/mobile/([^/]+)/([^/]+)/(seg_\d+\.ts)$",
+            path,
+        )
+        if not m:
+            self._error(404, "not found")
+            return
+        channel_id, profile, seg_name = m.group(1), m.group(2), m.group(3)
+
+        sess = mobile_transcode_manager.ensure_session(channel_id, profile)
+        if sess is None:
+            self._error(503, "transcoder at capacity")
+            return
+        mobile_transcode_manager.touch(channel_id, profile)
+
+        seg_path = os.path.join(sess.dir, seg_name)
+        # Segment may not exist yet if client raced ahead — brief wait
+        for _ in range(20):
+            if os.path.exists(seg_path) and os.path.getsize(seg_path) > 0:
+                break
+            time.sleep(0.1)
+        if not os.path.exists(seg_path):
+            self._error(404, "segment not found")
+            return
+        self._serve_file_range(seg_path)
+
     def _list_recordings(self) -> list:
         if not self.ctx.get_recordings_dir:
             return []
@@ -743,37 +859,75 @@ class RemoteHandler(BaseHTTPRequestHandler):
             pass
 
     def _build_recordings_response(self) -> dict:
-        if not self.ctx.get_jobs:
-            return {"active": [], "recent": []}
+        """
+        Structured recordings list for the mobile webapp + Android TV.
+
+        Returns:
+          active[]    — in-progress/waiting jobs, with live_hls_url for watch-while-recording
+          recent[]    — finished/error/stopped jobs still held in memory
+          completed[] — all .ts files on disk (NAS recordings folder), newest first
+        """
         now    = datetime.datetime.now()
         active = []
         recent = []
-        for i, job in enumerate(self.ctx.get_jobs()):
-            if job.status in ("waiting", "recording"):
-                entry = {
-                    "index":        i,
-                    "channel_name": job.channel_name,
-                    "status":       job.status,
-                }
-                if job.actual_start:
-                    elapsed = int((now - job.actual_start).total_seconds())
-                    entry["elapsed_secs"]   = elapsed
-                    entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
-                if job.output_file:
-                    entry["output_file"] = os.path.basename(job.output_file)
-                active.append(entry)
-            else:
-                _labels = {
-                    "complete": "Recording complete.",
-                    "error":    "Error encountered.",
-                    "stopped":  "Stopped by user.",
-                }
-                recent.append({
-                    "channel_name": job.channel_name,
-                    "status":       job.status,
-                    "status_text":  _labels.get(job.status, job.status),
-                })
-        return {"active": active, "recent": recent}
+        active_filenames = set()  # basenames currently being written
+        if self.ctx.get_jobs:
+            for i, job in enumerate(self.ctx.get_jobs()):
+                if job.status in ("waiting", "recording"):
+                    entry = {
+                        "index":        i,
+                        "job_id":       getattr(job, "id", None),
+                        "channel_name": job.channel_name,
+                        "status":       job.status,
+                    }
+                    if job.actual_start:
+                        elapsed = int((now - job.actual_start).total_seconds())
+                        entry["elapsed_secs"]   = elapsed
+                        entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
+                        entry["started_at"]     = job.actual_start.isoformat()
+                    entry["duration_secs"] = job_duration_secs(job)
+                    if job.output_file:
+                        fn = os.path.basename(job.output_file)
+                        entry["output_file"] = fn
+                        entry["ts_url"]      = f"/recordings/{fn}"
+                        active_filenames.add(fn)
+                    if getattr(job, "live_dir", None):
+                        entry["live_hls_url"] = f"/recordings/live/{job.id}/playlist.m3u8"
+                    active.append(entry)
+                else:
+                    _labels = {
+                        "complete": "Recording complete.",
+                        "error":    "Error encountered.",
+                        "stopped":  "Stopped by user.",
+                    }
+                    recent.append({
+                        "channel_name": job.channel_name,
+                        "status":       job.status,
+                        "status_text":  _labels.get(job.status, job.status),
+                    })
+
+        # Completed files on disk (newest first). Exclude files that are
+        # still being written by an active job — those appear in active[]
+        # with the live_hls_url instead.
+        completed = []
+        for rec in sorted(self._list_recordings(), key=lambda r: r["recorded_at"], reverse=True):
+            fn = rec["filename"]
+            if fn in active_filenames:
+                continue
+            abs_url = f"/recordings/{fn}"
+            from urllib.parse import quote as _q
+            completed.append({
+                "filename":      fn,
+                "size_bytes":    rec["size_bytes"],
+                "recorded_at":   rec["recorded_at"],
+                "ts_url":        abs_url,
+                "download_url":  abs_url,
+                # VLC deep links — absolute path; the client fills in the host
+                # via window.location.origin before use.
+                "vlc_path":      f"/recordings/{_q(fn)}",
+            })
+
+        return {"active": active, "recent": recent, "completed": completed}
 
     def _serve_kodi_playlist(self, qs: dict):
         """Generate M3U playlist with proxy URLs for Kodi."""

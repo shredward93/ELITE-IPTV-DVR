@@ -62,11 +62,13 @@ def _profile_args(profile: str, encoder: str) -> list[str]:
         fps       = "60"
         audio     = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"]
     elif profile == "data_saver":
-        # Web remote "Data saver": 720p60 cap @ ~2.5 Mbps video (moderate cellular / Wi‑Fi)
-        scale    = "scale=-2:720"
-        v_bitrate = "2500k"
-        v_maxrate = "2800k"
-        v_bufsize = "5000k"
+        # Web remote "Data saver": 540p60 @ ~1.8 Mbps. 540p60 is ~56% the pixel
+        # rate of 720p60, giving software x264 enough headroom to stay above
+        # real-time on a NAS CPU while preserving 60fps motion for sports.
+        scale    = "scale=-2:540"
+        v_bitrate = "1800k"
+        v_maxrate = "2000k"
+        v_bufsize = "3600k"
         fps       = "60"
         audio     = ["-c:a", "aac", "-b:a", "96k", "-ac", "2"]
     elif profile == "low":
@@ -344,7 +346,7 @@ class MobileTranscodeManager:
 
         hls_args = [
             "-f", "hls",
-            "-hls_time", "2",
+            "-hls_time", "4",
             "-hls_list_size", "8",
             # temp_file: write to seg_*.ts.tmp and atomically rename on close,
             #   so clients never fetch a half-written segment (was causing

@@ -2202,6 +2202,22 @@ function _recFullscreen(btn){
   const wrap=btn.closest('.rec-inline-player');
   if(!wrap) return;
   if(!document.fullscreenElement){
+    // Topbar has backdrop-filter which creates a containing block and traps :fullscreen.
+    // Detach the live player to <body> so fullscreen can actually cover the viewport.
+    if(wrap.id==='channel-inline-player' && !wrap._fsOrigin){
+      wrap._fsOrigin={parent:wrap.parentNode, next:wrap.nextSibling};
+      document.body.appendChild(wrap);
+      const restore=()=>{
+        if(!document.fullscreenElement && wrap._fsOrigin){
+          const o=wrap._fsOrigin; wrap._fsOrigin=null;
+          if(o.parent) o.parent.insertBefore(wrap, o.next||null);
+          document.removeEventListener('fullscreenchange', restore);
+          document.removeEventListener('webkitfullscreenchange', restore);
+        }
+      };
+      document.addEventListener('fullscreenchange', restore);
+      document.addEventListener('webkitfullscreenchange', restore);
+    }
     (wrap.requestFullscreen||wrap.webkitRequestFullscreen||wrap.mozRequestFullScreen).call(wrap).catch(()=>{});
   } else {
     (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document).catch(()=>{});

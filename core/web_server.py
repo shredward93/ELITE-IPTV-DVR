@@ -14,6 +14,7 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -64,7 +65,7 @@ class _RecordingHlsCache:
     wiped on container restart so entries don't survive deploys.
     """
 
-    _TMPDIR     = "/tmp/elite_rec_hls"
+    _TMPDIR     = os.path.join(tempfile.gettempdir(), "elite_rec_hls")
     _sessions:   dict[str, _RecordingHlsSession] = {}
     _locks:      dict[str, threading.Lock]       = {}
     _meta_lock   = threading.Lock()
@@ -226,6 +227,33 @@ class _RecordingHlsCache:
 
 _duration_cache: dict[tuple, float] = {}
 _duration_cache_lock = threading.Lock()
+
+_audio_codec_cache: dict[str, str] = {}
+_audio_codec_cache_lock = threading.Lock()
+
+
+def _probe_recording_audio_codec(ts_path: str) -> str | None:
+    """Return the first audio stream codec name (e.g. 'aac', 'ac3'), cached by path."""
+    with _audio_codec_cache_lock:
+        if ts_path in _audio_codec_cache:
+            return _audio_codec_cache[ts_path]
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-select_streams", "a:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "default=nokey=1:noprint_wrappers=1",
+             ts_path],
+            capture_output=True, timeout=10,
+            **config._SUBPROCESS_FLAGS,
+        )
+        codec = probe.stdout.decode("utf-8", errors="replace").strip().lower() or None
+    except Exception:
+        codec = None
+    if codec:
+        with _audio_codec_cache_lock:
+            _audio_codec_cache[ts_path] = codec
+    return codec
 
 
 def _probe_recording_duration(path: str) -> float | None:
@@ -1178,14 +1206,15 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _serve_recording_hls(self, path: str) -> None:
         """
-        Serve a completed recording as an instant byterange VOD HLS playlist.
+        Serve a completed recording as HLS.
 
-        No re-encoding: the original .ts file is referenced directly via
-        #EXT-X-BYTERANGE so the player can seek anywhere immediately.
-        Duration comes from the probe cache (fast, ~1s on first access).
+        AAC audio  → instant byterange VOD playlist (fast, no transcode).
+        Other audio → progressive ffmpeg remux via _RecordingHlsCache which
+                      transcodes AC3/MP2/etc to AAC so Chrome can play it.
 
         URL structure:
-          /api/recordings/hls/<url-encoded-filename>/index.m3u8
+          /api/recordings/hls/<url-encoded-filename>/index.m3u8   — playlist
+          /api/recordings/hls/<url-encoded-filename>/seg_NNNNN.ts — segments (remux only)
         """
         stripped = path[len("/api/recordings/hls/"):]
         slash    = stripped.rfind("/")
@@ -1198,8 +1227,6 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self._error(400, "Bad path"); return
         if ".." in filename or "/" in filename or "\\" in filename:
             self._error(400, "Invalid filename"); return
-        if leaf != "index.m3u8":
-            self._error(400, "Invalid leaf"); return
 
         rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
         if not rec_dir:
@@ -1209,26 +1236,85 @@ class RemoteHandler(BaseHTTPRequestHandler):
         if not os.path.isfile(ts_path):
             self._error(404, f"Recording not found: {filename}"); return
 
+        audio_codec  = _probe_recording_audio_codec(ts_path)
+        needs_remux  = audio_codec != "aac"  # AC3, MP2, unknown → transcode
+
+        # ── Remux path (non-AAC audio) ────────────────────────────────────────
+        if needs_remux:
+            if leaf == "index.m3u8":
+                sess = _RecordingHlsCache.get_or_start(filename, ts_path)
+                ready = _RecordingHlsCache.wait_for_startup(sess)
+                if not ready or sess.failed:
+                    self._error(503, f"Remux failed: {sess.error_tail[:200]}"); return
+                m3u8_path = os.path.join(sess.outdir, "index.m3u8")
+                try:
+                    with open(m3u8_path, "rb") as f:
+                        data = f.read()
+                except OSError as exc:
+                    self._error(500, f"Could not read remux playlist: {exc}"); return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            elif re.match(r'^seg_\d+\.ts$', leaf):
+                sess = _RecordingHlsCache._sessions.get(filename)
+                if not sess:
+                    # Session evicted or never started — kick it off and wait.
+                    sess = _RecordingHlsCache.get_or_start(filename, ts_path)
+                    _RecordingHlsCache.wait_for_startup(sess)
+                seg_path = os.path.join(sess.outdir, leaf)
+                # Wait up to 15s for this segment to be written.
+                deadline = time.time() + 15
+                while not os.path.isfile(seg_path) and time.time() < deadline:
+                    if sess.failed:
+                        self._error(503, "Remux failed"); return
+                    time.sleep(0.2)
+                if not os.path.isfile(seg_path):
+                    self._error(404, f"Segment not ready: {leaf}"); return
+                try:
+                    with open(seg_path, "rb") as f:
+                        data = f.read()
+                except OSError as exc:
+                    self._error(500, f"Could not read segment: {exc}"); return
+                self.send_response(200)
+                self.send_header("Content-Type", "video/MP2T")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "public, max-age=31536000")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                self._error(400, "Invalid leaf")
+            return
+
+        # ── Byterange path (AAC audio — instant, no transcode) ────────────────
+        if leaf != "index.m3u8":
+            self._error(400, "Invalid leaf"); return
+
         try:
             file_size = os.path.getsize(ts_path)
         except OSError as exc:
             self._error(500, f"Stat failed: {exc}"); return
 
-        # Get duration — probe synchronously on first access, instant thereafter.
         dur = _probe_recording_duration(ts_path)
         if dur is None or dur <= 0:
-            # Fallback: estimate from file size at a typical IPTV bitrate (4 Mbps).
             dur = file_size * 8 / 4_000_000
             print(f"[RecHLS] ffprobe unavailable for '{filename}', estimating {dur:.1f}s")
 
-        # Build instant byterange VOD playlist.
-        # Segments are fixed-duration byte slices of the original .ts file.
-        # hls.js uses HTTP Range headers to fetch only the bytes it needs —
-        # no re-encoding, full random-access seeking from the first request.
-        seg_dur   = 6.0
-        n_segs    = max(1, int(math.ceil(dur / seg_dur)))
-        bps       = file_size / dur           # bytes per second
-        ts_url    = f"/recordings/{urllib.parse.quote(filename, safe='')}"
+        seg_dur    = 6.0
+        n_segs     = max(1, int(math.ceil(dur / seg_dur)))
+        bps        = file_size / dur
+        ts_url     = f"/recordings/{urllib.parse.quote(filename, safe='')}"
         target_dur = int(math.ceil(seg_dur))
 
         lines = [
@@ -1241,12 +1327,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
         for i in range(n_segs):
             seg_start = int(i * seg_dur * bps)
             if i < n_segs - 1:
-                seg_end   = int((i + 1) * seg_dur * bps)
-                seg_len   = seg_end - seg_start
-                this_dur  = seg_dur
+                seg_end  = int((i + 1) * seg_dur * bps)
+                seg_len  = seg_end - seg_start
+                this_dur = seg_dur
             else:
-                seg_len   = file_size - seg_start
-                this_dur  = dur - i * seg_dur
+                seg_len  = file_size - seg_start
+                this_dur = dur - i * seg_dur
             if seg_len <= 0:
                 break
             lines.append(f"#EXTINF:{this_dur:.6f},")

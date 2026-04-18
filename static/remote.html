@@ -1678,7 +1678,10 @@ function attachStreamToVideo(video, info, status, channelName){
         // Pin live edge ~20s behind real-time so seeking forward has room
         // before snapping back to live.
         liveSyncDuration: 20,
-        liveMaxLatencyDuration: 60,
+        // Max allowed latency before hls.js force-resyncs to live edge.
+        // Must cover the entire back-buffer or rewinds >60s snap forward.
+        liveMaxLatencyDuration: 21600,
+        maxLiveSyncPlaybackRate: 1,
       } : {
         liveDurationInfinity:true,
         lowLatencyMode:false,
@@ -2318,7 +2321,8 @@ function playRecordingInline(kind, src, cardId, opts){
             enableWorker: true,
             lowLatencyMode: false,
             liveSyncDuration: 20,
-            liveMaxLatencyDuration: 60,
+            liveMaxLatencyDuration: 21600,
+            maxLiveSyncPlaybackRate: 1,
           };
       const h = new window.Hls(cfg);
       h.loadSource(src); h.attachMedia(video);

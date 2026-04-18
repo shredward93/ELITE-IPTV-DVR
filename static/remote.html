@@ -1384,14 +1384,18 @@ function playRecordingInline(kind, src, cardId){
   // Tear down any previous inline HLS instance on this card
   if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
   const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
+  // Completed recordings stream from a progressive event-type playlist —
+  // force start at 0 so hls.js doesn't drop the user at the encoder's
+  // current tail. Live in-progress recordings keep the default (live-edge)
+  // entry point so the viewer sees "now" and can scrub back.
+  const isCompletedRec = typeof src==='string' && src.indexOf('/api/recordings/hls/')===0;
   if(kind==='hls'){
     if(nativeHls){ video.src=src; }
     else if(window.Hls && window.Hls.isSupported()){
-      // backBufferLength lets the user rewind through already-recorded segments
-      // on a live (event-type) HLS playlist.
       const h=new window.Hls({
         liveDurationInfinity:true,
         backBufferLength:Infinity,
+        startPosition: isCompletedRec ? 0 : -1,
       });
       h.loadSource(src); h.attachMedia(video);
       video._hls=h;
@@ -1438,10 +1442,9 @@ function startRecordingPlay(hlsUrl, tsUrl, cardId){
     if(actionsEl) card.insertBefore(statusEl, actionsEl);
     else card.appendChild(statusEl);
   }
-  statusEl.textContent='Converting… (first play only, please wait)';
-  // GET triggers the remux on the server and blocks until ffmpeg finishes.
-  // On success the playlist body is returned; we discard it and let the
-  // player re-fetch it (instant — hits the server-side cache).
+  statusEl.textContent='Starting…';
+  // Server starts ffmpeg in the background and responds as soon as segment 0
+  // is on disk (a few seconds). The rest of the file streams in while we play.
   fetch(hlsUrl)
     .then(r=>{
       if(!r.ok) throw new Error('remux failed: '+r.status);
@@ -1451,6 +1454,16 @@ function startRecordingPlay(hlsUrl, tsUrl, cardId){
     .catch(err=>{
       statusEl.textContent='Convert failed — try Download instead ('+err.message+')';
     });
+}
+function deleteRecording(filename){
+  if(!confirm('Delete "'+filename+'"?\nThis cannot be undone.')) return;
+  fetch('/api/recordings/'+encodeURIComponent(filename), {method:'DELETE'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){toast('Deleted');refreshRecordings(true);}
+      else toast('Delete failed: '+(d.error||'unknown'));
+    })
+    .catch(()=>toast('Delete failed'));
 }
 function renderCompletedRec(r, i){
   const id='rec-done-'+i;
@@ -1467,6 +1480,7 @@ function renderCompletedRec(r, i){
         ${hlsUrl?`<button class="btn primary btn-sm" onclick="startRecordingPlay('${esc(hlsUrl)}','${esc(r.ts_url)}','${id}')">▶  Play</button>`:''}
         <a class="btn ghost btn-sm" href="${esc(vlc)}">Open in VLC</a>
         <a class="btn ghost btn-sm" href="${esc(r.download_url)}" download>⤓  Download</a>
+        <button class="btn danger btn-sm" onclick="deleteRecording('${escAttr(r.filename)}')">🗑 Delete</button>
       </div>
     </div>`;
 }

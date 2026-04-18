@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import threading
@@ -29,19 +30,42 @@ from core.mobile_transcode import manager as mobile_transcode_manager
 from core.recorder import job_duration_secs
 
 
+class _RecordingHlsSession:
+    """One progressive remux job: filename → outdir, with a running ffmpeg."""
+    __slots__ = (
+        "filename", "outdir", "process",
+        "first_seg_ready", "done_event",
+        "completed", "failed", "error_tail",
+    )
+
+    def __init__(self, filename: str, outdir: str):
+        self.filename         = filename
+        self.outdir           = outdir
+        self.process: subprocess.Popen | None = None
+        self.first_seg_ready  = threading.Event()
+        self.done_event       = threading.Event()
+        self.completed        = False
+        self.failed           = False
+        self.error_tail       = ""
+
+
 class _RecordingHlsCache:
     """
-    Remux a completed .ts recording to HLS (copy, no re-encode) on first
-    play, then cache the output directory for the container lifetime.
+    Progressive HLS remux cache for completed recordings.
 
-    Uses per-filename locks so two simultaneous first-play requests for the
-    same file don't double-remux. Second and later plays return instantly.
-    Cache lives in /tmp/elite_rec_hls/ — auto-wiped on container restart.
+    First request for a filename kicks off ffmpeg asynchronously. The server
+    waits only until segment 0 + the playlist are on disk (a few seconds),
+    then begins serving. The player reads a growing `event`-type playlist
+    and pulls new segments as they're written — encoding the tail of the
+    file happens in the background while playback is already underway.
+
+    Subsequent requests reuse the same session. /tmp/elite_rec_hls/ is
+    wiped on container restart so entries don't survive deploys.
     """
 
     _TMPDIR     = "/tmp/elite_rec_hls"
-    _cache:      dict[str, str]            = {}   # filename → outdir
-    _locks:      dict[str, threading.Lock] = {}
+    _sessions:   dict[str, _RecordingHlsSession] = {}
+    _locks:      dict[str, threading.Lock]       = {}
     _meta_lock   = threading.Lock()
 
     @classmethod
@@ -52,80 +76,151 @@ class _RecordingHlsCache:
             return cls._locks[filename]
 
     @classmethod
-    def get_or_remux(cls, filename: str, ts_path: str) -> str | None:
+    def get_or_start(cls, filename: str, ts_path: str) -> _RecordingHlsSession:
         """
-        Return path to the outdir that contains index.m3u8 + seg_*.ts files.
-        Blocks (in the calling request thread — ThreadingHTTPServer, so safe)
-        until ffmpeg finishes the remux. Returns None on failure.
+        Return an existing session or start a new one. Non-blocking w.r.t.
+        ffmpeg: returns as soon as ffmpeg is spawned. Callers that need to
+        serve a playlist should then await `sess.first_seg_ready`.
         """
         with cls._lock_for(filename):
-            if filename in cls._cache:
-                return cls._cache[filename]
+            sess = cls._sessions.get(filename)
+            if sess is not None and not sess.failed:
+                return sess
+            # If a prior attempt failed, drop it and try again.
+            if sess is not None and sess.failed:
+                cls._sessions.pop(filename, None)
 
             safe   = re.sub(r"[^\w.\-]", "_", filename)
             outdir = os.path.join(cls._TMPDIR, safe)
             os.makedirs(outdir, exist_ok=True)
 
+            # Wipe any stale output from a previous failed attempt — else
+            # ffmpeg may refuse to start (segment files exist) or we may
+            # serve a mix of new + old segments.
+            import glob as _g
+            for p in _g.glob(os.path.join(outdir, "*.ts")) + _g.glob(os.path.join(outdir, "*.m3u8")):
+                try: os.remove(p)
+                except OSError: pass
+
             playlist = os.path.join(outdir, "index.m3u8")
             seg_pat  = os.path.join(outdir, "seg_%05d.ts")
 
-            # -map 0:v:0 -map 0:a:0 : pick the first video + first audio
-            #                       track explicitly. Drops DVB subtitles,
-            #                       teletext, and data streams that would
-            #                       otherwise trip up the HLS muxer or break
-            #                       playback on iOS/Android.
-            # -c:v copy             : video passthrough — fast, no quality loss.
-            # -c:a aac -b:a 128k    : transcode audio to AAC. Provider .ts
-            #                       files often carry MP2 audio, which
-            #                       Safari/Chrome refuse to decode inside HLS
-            #                       even when muxed correctly → silent playback.
-            # -hls_list_size 0      : keep every segment in the playlist
-            #                       (default 5 → only last ~30 s playable).
-            # -hls_playlist_type vod: emit #EXT-X-PLAYLIST-TYPE:VOD and
-            #                       #EXT-X-ENDLIST so players allow scrubbing.
+            # Probe audio codec. AAC → pure remux (fast, IO-bound).
+            # MP2/AC3/etc → transcode to AAC for browser compatibility.
+            audio_args = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"]
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error",
+                     "-select_streams", "a:0",
+                     "-show_entries", "stream=codec_name",
+                     "-of", "default=nokey=1:noprint_wrappers=1",
+                     ts_path],
+                    capture_output=True, timeout=10,
+                    **config._SUBPROCESS_FLAGS,
+                )
+                codec = probe.stdout.decode("utf-8", errors="replace").strip().lower()
+                if codec == "aac":
+                    audio_args = ["-c:a", "copy"]
+                    print(f"[RecHLS] Source audio is AAC — fast remux")
+                else:
+                    print(f"[RecHLS] Source audio is '{codec or 'unknown'}' — transcoding to AAC")
+            except Exception as exc:
+                print(f"[RecHLS] ffprobe failed ({exc}); defaulting to AAC transcode")
+
+            # -hls_playlist_type event: segments can only be appended, and
+            #                           ENDLIST is written when ffmpeg exits.
+            #                           Players treat it as a growing seekable
+            #                           stream while encoding is in progress.
+            # -hls_list_size 0        : keep every segment in the playlist.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
                 "-i", ts_path,
                 "-map", "0:v:0",
                 "-map", "0:a:0?",
                 "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-ac", "2",
+                *audio_args,
                 "-f", "hls",
                 "-hls_time", "6",
                 "-hls_list_size", "0",
-                "-hls_playlist_type", "vod",
+                "-hls_playlist_type", "event",
                 "-hls_flags", "independent_segments+temp_file",
                 "-hls_segment_type", "mpegts",
                 "-hls_segment_filename", seg_pat,
                 playlist,
             ]
-            print(f"[RecHLS] Remuxing '{filename}' → {outdir}")
+
+            sess = _RecordingHlsSession(filename, outdir)
+            print(f"[RecHLS] Starting progressive remux '{filename}' → {outdir}")
             try:
-                result = subprocess.run(
-                    cmd, capture_output=True, timeout=600,
+                sess.process = subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     **config._SUBPROCESS_FLAGS,
                 )
-                if result.returncode != 0:
-                    tail = result.stderr.decode("utf-8", errors="replace")[-600:]
-                    print(f"[RecHLS] ffmpeg failed rc={result.returncode}\n{tail}")
-                    return None
-                print(f"[RecHLS] Done remuxing '{filename}'")
-                cls._cache[filename] = outdir
-                return outdir
-            except subprocess.TimeoutExpired:
-                print(f"[RecHLS] Timeout remuxing '{filename}'")
-                return None
-            except Exception as e:
-                print(f"[RecHLS] Error remuxing '{filename}': {e}")
-                return None
+            except Exception as exc:
+                sess.failed     = True
+                sess.error_tail = str(exc)
+                sess.first_seg_ready.set()
+                sess.done_event.set()
+                cls._sessions[filename] = sess
+                return sess
+
+            cls._sessions[filename] = sess
+
+            # Watcher thread:
+            #   1. Sets first_seg_ready once playlist + seg_00000 are on disk
+            #      (or ffmpeg dies).
+            #   2. Collects stderr and sets done_event on ffmpeg exit.
+            def _watch(s: _RecordingHlsSession, pl: str):
+                seg0 = os.path.join(s.outdir, "seg_00000.ts")
+                while s.process.poll() is None and not s.first_seg_ready.is_set():
+                    if (os.path.exists(pl)
+                            and os.path.exists(seg0)
+                            and os.path.getsize(seg0) > 0):
+                        s.first_seg_ready.set()
+                        break
+                    time.sleep(0.2)
+                try:
+                    _, stderr_bytes = s.process.communicate(timeout=None)
+                except Exception:
+                    stderr_bytes = b""
+                rc = s.process.returncode
+                if rc == 0:
+                    s.completed = True
+                    print(f"[RecHLS] '{s.filename}' completed")
+                else:
+                    s.failed     = True
+                    s.error_tail = stderr_bytes.decode("utf-8", errors="replace")[-800:]
+                    print(f"[RecHLS] '{s.filename}' failed rc={rc}\n{s.error_tail}")
+                # Guarantee waiters unblock even if ffmpeg died before seg 0.
+                s.first_seg_ready.set()
+                s.done_event.set()
+
+            threading.Thread(target=_watch, args=(sess, playlist), daemon=True).start()
+            return sess
 
     @classmethod
-    def invalidate(cls, filename: str) -> None:
-        """Remove a cache entry (e.g. if the source file is deleted)."""
-        with cls._meta_lock:
-            cls._cache.pop(filename, None)
+    def wait_for_startup(cls, sess: _RecordingHlsSession, timeout: float = 45.0) -> bool:
+        """Block until segment 0 is ready or ffmpeg fails / times out."""
+        return sess.first_seg_ready.wait(timeout=timeout)
+
+    @classmethod
+    def evict(cls, filename: str) -> None:
+        """Kill any running remux for filename, remove its temp dir."""
+        lock = cls._lock_for(filename)
+        with lock:
+            sess = cls._sessions.pop(filename, None)
+            if sess and sess.process and sess.process.poll() is None:
+                try:
+                    sess.process.terminate()
+                except Exception:
+                    pass
+            safe   = re.sub(r"[^\w.\-]", "_", filename)
+            outdir = os.path.join(cls._TMPDIR, safe)
+            if os.path.isdir(outdir):
+                try:
+                    shutil.rmtree(outdir)
+                except OSError:
+                    pass
 
 
 class StreamMuxer:
@@ -706,6 +801,32 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path.startswith("/api/recordings/"):
+            filename = unquote(path[len("/api/recordings/"):])
+            if not filename or "/" in filename or ".." in filename or not filename.endswith(".ts"):
+                self._error(400, "invalid filename")
+                return
+            rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
+            if not rec_dir:
+                self._error(503, "recordings directory not configured")
+                return
+            file_path = os.path.join(rec_dir, filename)
+            if not os.path.isfile(file_path):
+                self._error(404, "file not found")
+                return
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                self._error(500, f"delete failed: {e}")
+                return
+            _RecordingHlsCache.evict(filename)
+            self._json({"ok": True})
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _html(self, content: str):
@@ -997,15 +1118,14 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _serve_recording_hls(self, path: str) -> None:
         """
-        Serve a completed recording as HLS. On first request, blocks while
-        ffmpeg remuxes the .ts to HLS (copy — no re-encode). Subsequent
-        requests are served instantly from the cache.
+        Serve a completed recording as HLS, progressively — ffmpeg runs in
+        the background and playback starts as soon as segment 0 is written,
+        not after the whole file is re-encoded.
 
         URL structure:
           /api/recordings/hls/<url-encoded-filename>/index.m3u8
           /api/recordings/hls/<url-encoded-filename>/seg_NNNNN.ts
         """
-        # Parse: ['', 'api', 'recordings', 'hls', '<filename>', '<leaf>']
         stripped = path[len("/api/recordings/hls/"):]   # "filename/leaf"
         slash    = stripped.rfind("/")
         if slash < 0:
@@ -1015,10 +1135,11 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         if not filename or not leaf:
             self._error(400, "Bad path"); return
-
-        # Security: no path traversal
         if ".." in filename or "/" in filename or "\\" in filename:
             self._error(400, "Invalid filename"); return
+        # Leaf must be the playlist or a numbered segment — no path traversal.
+        if leaf != "index.m3u8" and not re.match(r"^seg_\d+\.ts$", leaf):
+            self._error(400, "Invalid leaf"); return
 
         rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
         if not rec_dir:
@@ -1028,22 +1149,35 @@ class RemoteHandler(BaseHTTPRequestHandler):
         if not os.path.isfile(ts_path):
             self._error(404, f"Recording not found: {filename}"); return
 
-        # Remux (blocks until done, uses cache on repeat requests)
-        outdir = _RecordingHlsCache.get_or_remux(filename, ts_path)
-        if outdir is None:
-            self._error(500, "Remux failed — see container logs"); return
-
-        target = os.path.join(outdir, leaf)
-        if not os.path.isfile(target):
-            self._error(404, f"Not found in HLS output: {leaf}"); return
+        # Kick off (or reuse) the background remux session.
+        sess = _RecordingHlsCache.get_or_start(filename, ts_path)
 
         if leaf.endswith(".m3u8"):
-            # Rewrite bare segment names in the playlist to full API paths
+            # Wait only until segment 0 exists, not for the whole encode.
+            if not _RecordingHlsCache.wait_for_startup(sess, timeout=45.0):
+                self._error(504, "Remux startup timeout"); return
+            if sess.failed and not os.path.exists(
+                    os.path.join(sess.outdir, "seg_00000.ts")):
+                self._error(500, f"Remux failed: {sess.error_tail[-200:]}")
+                return
+
+            target = os.path.join(sess.outdir, leaf)
+            if not os.path.isfile(target):
+                self._error(404, f"Playlist not ready: {leaf}"); return
+
             base = f"/api/recordings/hls/{urllib.parse.quote(filename, safe='')}"
             try:
                 with open(target, "r", errors="replace") as f:
                     pl = f.read()
-                # ffmpeg writes bare names like "seg_00001.ts"; prefix them
+                # Tell iOS native HLS (which ignores hls.js config) to start
+                # at 0 instead of the live edge while the playlist is still
+                # event-type without ENDLIST.
+                if "#EXT-X-START" not in pl:
+                    pl = pl.replace(
+                        "#EXTM3U",
+                        "#EXTM3U\n#EXT-X-START:TIME-OFFSET=0,PRECISE=YES",
+                        1,
+                    )
                 pl = re.sub(
                     r"^(seg_\d+\.ts)$",
                     lambda m: f"{base}/{m.group(1)}",
@@ -1052,11 +1186,13 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 )
                 data = pl.encode()
             except Exception as exc:
-                self._error(500, f"Playlist rewrite error: {exc}"); return
+                self._error(500, f"Playlist read error: {exc}"); return
+
             self.send_response(200)
             self.send_header("Content-Type", "application/vnd.apple.mpegurl")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-cache")
+            # No-cache is important: playlist grows until ENDLIST is written.
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             try:
@@ -1064,7 +1200,19 @@ class RemoteHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
         else:
-            # Segment file — use the existing range-aware file server
+            # Segment request. May not exist yet if player raced ahead of
+            # the encoder — wait briefly, but give up if the session ended
+            # without producing this segment (bogus request / end of file).
+            target = os.path.join(sess.outdir, leaf)
+            deadline = time.time() + 30.0
+            while time.time() < deadline:
+                if os.path.exists(target) and os.path.getsize(target) > 0:
+                    break
+                if sess.done_event.is_set():
+                    break
+                time.sleep(0.2)
+            if not os.path.isfile(target):
+                self._error(404, "Segment not available"); return
             self._serve_file_range(target)
 
     def _build_recordings_response(self) -> dict:
@@ -1329,6 +1477,27 @@ class RemoteHandler(BaseHTTPRequestHandler):
         pass  # suppress per-request console spam
 
 
+def _auto_cleanup_recordings(get_recordings_dir, max_age_days: int = 7) -> None:
+    """Delete .ts files older than max_age_days. Runs hourly in a daemon thread."""
+    time.sleep(30)  # let the server finish startup before first scan
+    while True:
+        rec_dir = get_recordings_dir() if callable(get_recordings_dir) else None
+        if rec_dir and os.path.isdir(rec_dir):
+            cutoff = time.time() - max_age_days * 86400
+            for fname in os.listdir(rec_dir):
+                if not fname.endswith(".ts"):
+                    continue
+                fpath = os.path.join(rec_dir, fname)
+                try:
+                    if os.path.getmtime(fpath) < cutoff:
+                        os.remove(fpath)
+                        _RecordingHlsCache.evict(fname)
+                        print(f"[AutoClean] Deleted {fname} (>{max_age_days}d old)")
+                except OSError:
+                    pass
+        time.sleep(3600)
+
+
 def start_web_server(ctx: WebContext) -> str:
     """
     Start the HTTP server on config.WEB_PORT.
@@ -1338,6 +1507,12 @@ def start_web_server(ctx: WebContext) -> str:
     RemoteHandler.ctx = ctx
     server = ThreadingHTTPServer(("0.0.0.0", config.WEB_PORT), RemoteHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    if ctx.get_recordings_dir:
+        threading.Thread(
+            target=_auto_cleanup_recordings,
+            args=(ctx.get_recordings_dir,),
+            daemon=True,
+        ).start()
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

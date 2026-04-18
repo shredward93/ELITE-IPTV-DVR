@@ -231,7 +231,13 @@
 
   /* VIDEO PLAYER */
   #player-panel{margin:0 0 14px}
-  #video-player{width:100%; max-height:360px; background:#000; border-radius:10px; border:1px solid var(--rule)}
+  #channel-inline-player{margin-top:10px}
+  /* Always show scrubber + buttons on the channel player (Live DVR hides them otherwise). */
+  #channel-inline-player .rec-player-bar,
+  #channel-inline-player .rec-overlay-top{
+    opacity:1;
+    pointer-events:auto;
+  }
   .player-ctrl{display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap}
   #player-status{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--paper-muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .quality-group{display:flex; align-items:center; gap:4px; flex-wrap:wrap}
@@ -857,7 +863,40 @@
         <button class="btn ghost" onclick="setBackup()">⤓  Set Backup</button>
       </div>
       <div id="player-panel" style="display:none">
-        <video id="video-player" controls autoplay playsinline x-webkit-airplay="allow"></video>
+        <div id="channel-inline-player" class="rec-inline-player paused">
+          <div class="rec-video-wrap">
+            <video id="video-player" autoplay playsinline webkit-playsinline x-webkit-airplay="allow"></video>
+            <div class="rec-spinner"></div>
+            <div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">-10s</span></div>
+            <div class="rec-tap-zone rec-tap-center"></div>
+            <div class="rec-tap-zone rec-tap-right"><div class="rec-tap-ripple"></div><span class="rec-tap-label">+10s</span></div>
+            <button type="button" class="rec-center-play" title="Play" aria-label="Play">Play</button>
+            <div class="rec-overlay-top">
+              <button type="button" class="rec-inline-close" title="Stop player" onclick="stopPlayer()">Close</button>
+            </div>
+            <div class="rec-player-bar">
+              <div class="rec-seek-wrap">
+                <div class="rec-seek-bg"></div>
+                <div class="rec-seek-buffered"></div>
+                <div class="rec-seek-played"></div>
+                <input type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">
+              </div>
+              <div class="rec-time-row">
+                <span class="rec-seek-time">0:00</span>
+                <span class="rec-seek-dur">0:00</span>
+              </div>
+              <div class="rec-ctrl-row">
+                <button type="button" class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)" title="Play/Pause">Pause</button>
+                <button type="button" class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">-10s</button>
+                <button type="button" class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">+10s</button>
+                <span class="rec-ctrl-spacer"></span>
+                <button type="button" class="rec-ctrl-btn" title="Open in VLC" onclick="_channelRecWatchVLC(this)">VLC</button>
+                <button type="button" class="rec-ctrl-btn" title="Cast / AirPlay" onclick="_recCast(this)">Cast</button>
+                <button type="button" class="rec-ctrl-btn" title="Fullscreen" onclick="_recFullscreen(this)">FS</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="player-ctrl">
           <button class="btn ghost btn-sm" onclick="stopPlayer()">Stop</button>
           <button class="btn ghost btn-sm" onclick="watchLiveInVLC()">Open in VLC</button>
@@ -1620,6 +1659,7 @@ function attachStreamToVideo(video, info, status, channelName){
   const liveDvr = info.liveDvr === true;
   if(info.type==='hls'){
     if(nativeHls){
+      try{video.muted=false;}catch(e){}
       video.src=info.url;
       video.play().catch(()=>{status.textContent='Tap ▶ to start';});
     }else if(window.Hls && window.Hls.isSupported()){
@@ -1640,6 +1680,7 @@ function attachStreamToVideo(video, info, status, channelName){
       currentHls.loadSource(info.url);
       currentHls.attachMedia(video);
       currentHls.on(window.Hls.Events.MANIFEST_PARSED, ()=>{
+        try{video.muted=false;}catch(e){}
         video.play().catch(()=>{status.textContent='Tap ▶ to start';});
       });
       currentHls.on(window.Hls.Events.ERROR, (_,data)=>{
@@ -1671,11 +1712,13 @@ function attachStreamToVideo(video, info, status, channelName){
     }
   }else{
     // Raw .ts passthrough
+    try{video.muted=false;}catch(e){}
     video.src=info.url;
     video.play().catch(()=>{status.textContent='Tap ▶ to start';});
   }
   video.onplaying=()=>{
     video._userPaused=false;
+    try{video.muted=false;}catch(e){}
     status.textContent='Playing'+(channelName?(' · '+channelName):'');
   };
   video.onpause=()=>{ video._userPaused=true; };
@@ -1709,6 +1752,7 @@ async function playChannel(forceProfile){
 
   tearDownPlayer();
   stopAllVideosExcept(video);
+  ensureChannelInlinePlayerBound();
 
   if(profile==='live_dvr'){
     status.textContent='Starting Live DVR…';
@@ -1724,6 +1768,7 @@ async function playChannel(forceProfile){
       currentLiveHlsUrl=d.live_hls_url;
       status.textContent='Playing · '+selName;
       attachStreamToVideo(video,{url:d.live_hls_url,type:'hls',liveDvr:true},status,selName);
+      syncChannelPlayerShell(profile);
     }catch(e){
       status.textContent='Could not start Live DVR';
       toast(String(e));
@@ -1739,6 +1784,7 @@ async function playChannel(forceProfile){
     : 'Transcoding (Data saver)… (first load ~5s)';
 
   attachStreamToVideo(video, info, status, selName);
+  syncChannelPlayerShell(profile);
 }
 function stopPlayer(){
   const panel=document.getElementById('player-panel');
@@ -1802,6 +1848,7 @@ function setupWatchModeButtons(){
     }
   });
   setActiveWatchModeBtn(savedWatchMode());
+  ensureChannelInlinePlayerBound();
 }
 
 /* ═══ RECORDINGS PANE ═══ */
@@ -1872,6 +1919,7 @@ function stopAllVideosExcept(keep){
   }
   // Remove any inline player wrappers whose video we just killed.
   document.querySelectorAll('.rec-inline-player').forEach(p=>{
+    if(p.id==='channel-inline-player') return;
     const v=p.querySelector('video');
     if(v && v!==keep && !v.src) p.remove();
   });
@@ -1903,11 +1951,20 @@ function _recPlayableDuration(v){
   const holder=v.closest('.rec-inline-player');
   const known=holder&&holder._duration;
   if(known&&isFinite(known)) return known;
-  if(isFinite(v.duration)&&v.duration>0) return v.duration;
-  // Fall back to last seekable range end (what hls.js has loaded so far).
+  const metaDur=v.duration;
+  if(isFinite(metaDur)&&metaDur>0&&metaDur!==Number.POSITIVE_INFINITY) return metaDur;
+  let end=0;
   try{
-    if(v.seekable&&v.seekable.length) return v.seekable.end(v.seekable.length-1);
+    if(v.seekable&&v.seekable.length){
+      end=Math.max(end, v.seekable.end(v.seekable.length-1));
+    }
   }catch(e){}
+  try{
+    if(v.buffered&&v.buffered.length){
+      end=Math.max(end, v.buffered.end(v.buffered.length-1));
+    }
+  }catch(e){}
+  if(end>0) return end;
   return 0;
 }
 function closeInlinePlayer(cardId){
@@ -1947,12 +2004,188 @@ function _recFullscreen(btn){
 function _recShowControls(holder, autoHide){
   holder.classList.add('controls-visible');
   if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
-  if(autoHide){
+  // Channel watch panel: keep transport visible (Live DVR + other modes) — same expectation as Recordings.
+  if(autoHide && holder.id!=='channel-inline-player'){
     const v=holder.querySelector('video');
     holder._hideTimer=setTimeout(()=>{
       if(v && !v.paused) holder.classList.remove('controls-visible');
     }, 3200);
   }
+}
+/** Wire seek bar, skip zones, keyboard — shared by recording cards and #channel-inline-player */
+function bindRecInlinePlayerControls(holder){
+  const vid      = holder.querySelector('video');
+  const seek     = holder.querySelector('input[type=range]');
+  const seekWrap = holder.querySelector('.rec-seek-wrap');
+  const timeEl   = holder.querySelector('.rec-seek-time');
+  const durEl    = holder.querySelector('.rec-seek-dur');
+  const bufEl    = holder.querySelector('.rec-seek-buffered');
+  const playedEl = holder.querySelector('.rec-seek-played');
+  const ppBtn    = holder.querySelector('.play-pause');
+  const centerPlay = holder.querySelector('.rec-center-play');
+  const spinner  = holder.querySelector('.rec-spinner');
+  if(!vid || !seek || !seekWrap || !bufEl || !playedEl || !timeEl || !durEl) return;
+
+  function _updateBars(){
+    const dur = _recPlayableDuration(vid);
+    if(dur>0){
+      const pct = Math.min(100, (vid.currentTime/dur)*100);
+      playedEl.style.width = pct+'%';
+      if(!seek._dragging){ seek.value = Math.round(pct*10); }
+      try{
+        if(vid.buffered && vid.buffered.length){
+          const end = vid.buffered.end(vid.buffered.length-1);
+          bufEl.style.width = Math.min(100, (end/dur)*100)+'%';
+        }
+      }catch(e){}
+    } else {
+      playedEl.style.width='0%';
+      bufEl.style.width='0%';
+    }
+    timeEl.textContent = _fmtTime(vid.currentTime||0);
+  }
+  vid.addEventListener('timeupdate', _updateBars);
+  vid.addEventListener('progress', _updateBars);
+  vid.addEventListener('durationchange', ()=>{
+    const dur = _recPlayableDuration(vid);
+    durEl.textContent = dur>0 ? _fmtTime(dur) : (holder._isLive?'LIVE':'0:00');
+  });
+  vid.addEventListener('play', ()=>{
+    ppBtn.textContent='\u23F8'; holder.classList.remove('paused');
+    _recShowControls(holder, true);
+  });
+  vid.addEventListener('pause', ()=>{
+    ppBtn.textContent='\u25B6'; holder.classList.add('paused');
+    _recShowControls(holder, false);
+  });
+  vid.addEventListener('waiting', ()=>spinner.classList.add('visible'));
+  vid.addEventListener('playing', ()=>{ spinner.classList.remove('visible'); try{vid.muted=false;}catch(e){} });
+  vid.addEventListener('canplay', ()=>spinner.classList.remove('visible'));
+  vid.addEventListener('ended', ()=>{ holder.classList.add('paused'); _recShowControls(holder, false); });
+
+  centerPlay.addEventListener('click', e=>{
+    e.stopPropagation();
+    vid.paused ? vid.play().catch(()=>{}) : vid.pause();
+  });
+
+  function _seekTo(pctMille){
+    const dur = _recPlayableDuration(vid);
+    if(dur<=0) return;
+    vid.currentTime = Math.max(0, Math.min(dur, (pctMille/1000)*dur));
+  }
+  seek.addEventListener('mousedown', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');});
+  seek.addEventListener('touchstart', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');}, {passive:true});
+  seek.addEventListener('input', ()=>{
+    const dur = _recPlayableDuration(vid);
+    if(dur>0){
+      const pct = seek.value/1000;
+      playedEl.style.width = (pct*100)+'%';
+      timeEl.textContent = _fmtTime(pct*dur);
+    }
+  });
+  seek.addEventListener('change', ()=>{ _seekTo(parseFloat(seek.value)); seek._dragging=false; seekWrap.classList.remove('dragging'); });
+  seek.addEventListener('mouseup',  ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
+  seek.addEventListener('touchend', ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
+
+  holder.querySelectorAll('.rec-tap-zone').forEach(zone=>{
+    let lastTap=0;
+    zone.addEventListener('click', e=>{
+      e.stopPropagation();
+      const now=Date.now(), dt=now-lastTap; lastTap=now;
+      const isCenter = zone.classList.contains('rec-tap-center');
+      if(dt<320 && !isCenter){
+        const delta = zone.classList.contains('rec-tap-left') ? -10 : 10;
+        const dur = _recPlayableDuration(vid);
+        vid.currentTime = Math.max(0, Math.min(dur, vid.currentTime+delta));
+        const rip = zone.querySelector('.rec-tap-ripple');
+        if(rip){rip.classList.remove('pop'); void rip.offsetWidth; rip.classList.add('pop');}
+        zone.classList.add('active');
+        setTimeout(()=>zone.classList.remove('active'), 700);
+        _recShowControls(holder, !vid.paused);
+      } else if(isCenter){
+        if(dt<320){
+          vid.paused ? vid.play().catch(()=>{}) : vid.pause();
+        } else {
+          if(holder.id==='channel-inline-player'){
+            _recShowControls(holder, false);
+          } else if(holder.classList.contains('controls-visible')){
+            holder.classList.remove('controls-visible');
+            if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
+          } else {
+            _recShowControls(holder, !vid.paused);
+          }
+        }
+      } else {
+        _recShowControls(holder, !vid.paused);
+      }
+    });
+  });
+
+  if(holder._keyHandler){
+    document.removeEventListener('keydown', holder._keyHandler);
+  }
+  const keyHandler = e=>{
+    if(!document.body.contains(holder)) return;
+    const active = document.activeElement;
+    if(active && active.tagName==='INPUT' && active.type!=='range') return;
+    const fs = document.fullscreenElement===holder;
+    const hovered = holder.matches(':hover');
+    if(!fs && !hovered) return;
+    switch(e.key){
+      case ' ': case 'k':
+        e.preventDefault(); vid.paused?vid.play().catch(()=>{}):vid.pause(); break;
+      case 'ArrowLeft': case 'j':
+        e.preventDefault(); vid.currentTime = Math.max(0, vid.currentTime-10);
+        _recShowControls(holder, !vid.paused); break;
+      case 'ArrowRight': case 'l':
+        e.preventDefault();
+        vid.currentTime = Math.min(_recPlayableDuration(vid), vid.currentTime+10);
+        _recShowControls(holder, !vid.paused); break;
+      case 'f':
+        e.preventDefault(); _recFullscreen(holder.querySelector('.rec-ctrl-btn[title="Fullscreen"]')||holder.querySelector('.rec-ctrl-btn')); break;
+      case 'm':
+        e.preventDefault(); vid.muted = !vid.muted; break;
+      case 'Escape':
+        if(fs) document.exitFullscreen().catch(()=>{});
+        break;
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+  holder._keyHandler = keyHandler;
+
+  holder.addEventListener('mousemove', ()=>_recShowControls(holder, !vid.paused));
+  holder.addEventListener('touchstart', ()=>_recShowControls(holder, !vid.paused), {passive:true});
+}
+function ensureChannelInlinePlayerBound(){
+  const holder=document.getElementById('channel-inline-player');
+  if(!holder||holder._channelControlsBound) return;
+  holder._channelControlsBound=true;
+  bindRecInlinePlayerControls(holder);
+}
+function _channelRecWatchVLC(btn){
+  void btn;
+  watchLiveInVLC();
+}
+function syncChannelPlayerShell(profileResolved){
+  const shell=document.getElementById('channel-inline-player');
+  if(!shell) return;
+  const isLive = profileResolved==='live_dvr';
+  shell._isLive = isLive;
+  shell._duration = null;
+  const tr=shell.querySelector('.rec-time-row');
+  if(tr) tr.classList.toggle('live-mode', isLive);
+  const durEl=shell.querySelector('.rec-seek-dur');
+  if(durEl) durEl.textContent = isLive ? 'LIVE' : '\u2026';
+  if(currentChannelForPlayer){
+    if(profileResolved==='live_dvr' && currentLiveHlsUrl){
+      shell._vlcUrl = absoluteUrl(currentLiveHlsUrl);
+    } else {
+      const inf = buildStreamUrl(currentChannelForPlayer.id, profileResolved);
+      shell._vlcUrl = absoluteUrl(inf.url);
+    }
+    shell._vlcName = currentChannelForPlayer.name || '';
+  }
+  _recShowControls(shell, true);
 }
 function playRecordingInline(kind, src, cardId, opts){
   // kind: 'hls' for in-progress live playlist or completed-remuxed HLS;
@@ -2002,150 +2235,7 @@ function playRecordingInline(kind, src, cardId, opts){
       +   '</div>'
       + '</div>';
     card.appendChild(holder);
-
-    const vid      = holder.querySelector('video');
-    const seek     = holder.querySelector('input[type=range]');
-    const seekWrap = holder.querySelector('.rec-seek-wrap');
-    const timeEl   = holder.querySelector('.rec-seek-time');
-    const durEl    = holder.querySelector('.rec-seek-dur');
-    const timeRow  = holder.querySelector('.rec-time-row');
-    const bufEl    = holder.querySelector('.rec-seek-buffered');
-    const playedEl = holder.querySelector('.rec-seek-played');
-    const ppBtn    = holder.querySelector('.play-pause');
-    const centerPlay = holder.querySelector('.rec-center-play');
-    const spinner  = holder.querySelector('.rec-spinner');
-
-    function _updateBars(){
-      const dur = _recPlayableDuration(vid);
-      if(dur>0){
-        const pct = Math.min(100, (vid.currentTime/dur)*100);
-        playedEl.style.width = pct+'%';
-        if(!seek._dragging){ seek.value = Math.round(pct*10); }
-        // Buffered range
-        try{
-          if(vid.buffered && vid.buffered.length){
-            const end = vid.buffered.end(vid.buffered.length-1);
-            bufEl.style.width = Math.min(100, (end/dur)*100)+'%';
-          }
-        }catch(e){}
-      } else {
-        playedEl.style.width='0%';
-        bufEl.style.width='0%';
-      }
-      timeEl.textContent = _fmtTime(vid.currentTime||0);
-    }
-    vid.addEventListener('timeupdate', _updateBars);
-    vid.addEventListener('progress', _updateBars);
-    vid.addEventListener('durationchange', ()=>{
-      const dur = _recPlayableDuration(vid);
-      durEl.textContent = dur>0 ? _fmtTime(dur) : (holder._isLive?'LIVE':'0:00');
-    });
-    vid.addEventListener('play', ()=>{
-      ppBtn.textContent='⏸'; holder.classList.remove('paused');
-      _recShowControls(holder, true);
-    });
-    vid.addEventListener('pause', ()=>{
-      ppBtn.textContent='▶'; holder.classList.add('paused');
-      _recShowControls(holder, false);
-    });
-    vid.addEventListener('waiting', ()=>spinner.classList.add('visible'));
-    vid.addEventListener('playing', ()=>spinner.classList.remove('visible'));
-    vid.addEventListener('canplay', ()=>spinner.classList.remove('visible'));
-    vid.addEventListener('ended',   ()=>{ holder.classList.add('paused'); _recShowControls(holder, false); });
-
-    centerPlay.addEventListener('click', e=>{
-      e.stopPropagation();
-      vid.paused ? vid.play().catch(()=>{}) : vid.pause();
-    });
-
-    // Seek bar interactions
-    function _seekTo(pctMille){
-      const dur = _recPlayableDuration(vid);
-      if(dur<=0) return;
-      vid.currentTime = Math.max(0, Math.min(dur, (pctMille/1000)*dur));
-    }
-    seek.addEventListener('mousedown', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');});
-    seek.addEventListener('touchstart', ()=>{seek._dragging=true; seekWrap.classList.add('dragging');}, {passive:true});
-    seek.addEventListener('input', ()=>{
-      const dur = _recPlayableDuration(vid);
-      if(dur>0){
-        const pct = seek.value/1000;
-        playedEl.style.width = (pct*100)+'%';
-        timeEl.textContent = _fmtTime(pct*dur);
-      }
-    });
-    seek.addEventListener('change', ()=>{ _seekTo(parseFloat(seek.value)); seek._dragging=false; seekWrap.classList.remove('dragging'); });
-    seek.addEventListener('mouseup',  ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
-    seek.addEventListener('touchend', ()=>{ seek._dragging=false; seekWrap.classList.remove('dragging'); });
-
-    // Double-tap zones (left = -10s, right = +10s, center = toggle controls/play)
-    holder.querySelectorAll('.rec-tap-zone').forEach(zone=>{
-      let lastTap=0;
-      zone.addEventListener('click', e=>{
-        e.stopPropagation();
-        const now=Date.now(), dt=now-lastTap; lastTap=now;
-        const isCenter = zone.classList.contains('rec-tap-center');
-        if(dt<320 && !isCenter){
-          const delta = zone.classList.contains('rec-tap-left') ? -10 : 10;
-          const dur = _recPlayableDuration(vid);
-          vid.currentTime = Math.max(0, Math.min(dur, vid.currentTime+delta));
-          const rip = zone.querySelector('.rec-tap-ripple');
-          if(rip){rip.classList.remove('pop'); void rip.offsetWidth; rip.classList.add('pop');}
-          zone.classList.add('active');
-          setTimeout(()=>zone.classList.remove('active'), 700);
-          _recShowControls(holder, !vid.paused);
-        } else if(isCenter){
-          // Single tap on center: toggle controls visibility.
-          // Double tap on center: play/pause toggle.
-          if(dt<320){
-            vid.paused ? vid.play().catch(()=>{}) : vid.pause();
-          } else {
-            if(holder.classList.contains('controls-visible')){
-              holder.classList.remove('controls-visible');
-              if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
-            } else {
-              _recShowControls(holder, !vid.paused);
-            }
-          }
-        } else {
-          _recShowControls(holder, !vid.paused);
-        }
-      });
-    });
-
-    // Keyboard shortcuts while player is hovered/focused
-    const keyHandler = e=>{
-      if(!document.body.contains(holder)) return;
-      const active = document.activeElement;
-      if(active && active.tagName==='INPUT' && active.type!=='range') return;
-      const fs = document.fullscreenElement===holder;
-      const hovered = holder.matches(':hover');
-      if(!fs && !hovered) return;
-      switch(e.key){
-        case ' ': case 'k':
-          e.preventDefault(); vid.paused?vid.play().catch(()=>{}):vid.pause(); break;
-        case 'ArrowLeft': case 'j':
-          e.preventDefault(); vid.currentTime = Math.max(0, vid.currentTime-10);
-          _recShowControls(holder, !vid.paused); break;
-        case 'ArrowRight': case 'l':
-          e.preventDefault();
-          vid.currentTime = Math.min(_recPlayableDuration(vid), vid.currentTime+10);
-          _recShowControls(holder, !vid.paused); break;
-        case 'f':
-          e.preventDefault(); _recFullscreen(holder.querySelector('.rec-ctrl-btn')); break;
-        case 'm':
-          e.preventDefault(); vid.muted = !vid.muted; break;
-        case 'Escape':
-          if(fs) document.exitFullscreen().catch(()=>{});
-          break;
-      }
-    };
-    document.addEventListener('keydown', keyHandler);
-    holder._keyHandler = keyHandler;
-
-    // Show controls on any mouse movement / touch
-    holder.addEventListener('mousemove', ()=>_recShowControls(holder, !vid.paused));
-    holder.addEventListener('touchstart', ()=>_recShowControls(holder, !vid.paused), {passive:true});
+    bindRecInlinePlayerControls(holder);
   }
 
   const video=holder.querySelector('video');

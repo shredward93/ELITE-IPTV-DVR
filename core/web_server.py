@@ -402,14 +402,23 @@ class RemoteHandler(BaseHTTPRequestHandler):
         # ── Completed recording file serving ──────────────────────────────────
         elif path.startswith("/recordings/"):
             file_name = path[len("/recordings/"):]
+            print(f"[Recordings] Requested file: {file_name}")
             if not file_name or "/" in file_name or ".." in file_name:
+                print(f"[Recordings] Invalid filename: {file_name}")
                 self._error(400, "invalid filename")
                 return
             rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
+            print(f"[Recordings] Recordings dir: {rec_dir}")
             if not rec_dir:
+                print(f"[Recordings] ERROR: Recordings directory not configured")
                 self._error(503, "recordings directory not configured")
                 return
-            self._serve_file_range(os.path.join(rec_dir, file_name))
+            file_path = os.path.join(rec_dir, file_name)
+            print(f"[Recordings] Full path: {file_path}, exists: {os.path.exists(file_path)}")
+            if not os.path.exists(file_path):
+                self._error(404, "file not found")
+                return
+            self._serve_file_range(file_path)
 
         else:
             self.send_response(404)

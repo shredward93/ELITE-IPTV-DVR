@@ -394,7 +394,9 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self._serve_kodi_xmltv()
 
         # ── Completed recordings list ─────────────────────────────────────────
-        elif path == "/recordings":
+        elif path == "/recordings" or path == "/recordings/":
+            ua = self.headers.get("User-Agent", "")
+            print(f"[Recordings] List request from UA: {ua!r}")
             recordings = self._list_recordings()
             # Always return HTML - more compatible with Kodi and browsers
             self._serve_recordings_html(recordings)
@@ -402,7 +404,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
         # ── Completed recording file serving ──────────────────────────────────
         elif path.startswith("/recordings/"):
             file_name = path[len("/recordings/"):]
-            print(f"[Recordings] Requested file: {file_name}")
+            ua = self.headers.get("User-Agent", "")
+            print(f"[Recordings] File request: {file_name!r} UA: {ua!r}")
             if not file_name or "/" in file_name or ".." in file_name:
                 print(f"[Recordings] Invalid filename: {file_name}")
                 self._error(400, "invalid filename")

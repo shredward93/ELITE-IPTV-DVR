@@ -69,20 +69,29 @@ class _RecordingHlsCache:
             playlist = os.path.join(outdir, "index.m3u8")
             seg_pat  = os.path.join(outdir, "seg_%05d.ts")
 
-            # -map 0              : copy every stream (without this ffmpeg's
-            #                       default picks one per type, and provider
-            #                       .ts files with multi-program layouts end
-            #                       up losing the audio track).
-            # -hls_list_size 0    : keep every segment in the playlist.
-            #                       Default is 5 → only the last ~30 s
-            #                       would be playable.
+            # -map 0:v:0 -map 0:a:0 : pick the first video + first audio
+            #                       track explicitly. Drops DVB subtitles,
+            #                       teletext, and data streams that would
+            #                       otherwise trip up the HLS muxer or break
+            #                       playback on iOS/Android.
+            # -c:v copy             : video passthrough — fast, no quality loss.
+            # -c:a aac -b:a 128k    : transcode audio to AAC. Provider .ts
+            #                       files often carry MP2 audio, which
+            #                       Safari/Chrome refuse to decode inside HLS
+            #                       even when muxed correctly → silent playback.
+            # -hls_list_size 0      : keep every segment in the playlist
+            #                       (default 5 → only last ~30 s playable).
             # -hls_playlist_type vod: emit #EXT-X-PLAYLIST-TYPE:VOD and
             #                       #EXT-X-ENDLIST so players allow scrubbing.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
                 "-i", ts_path,
-                "-map", "0",
-                "-c", "copy",
+                "-map", "0:v:0",
+                "-map", "0:a:0?",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ac", "2",
                 "-f", "hls",
                 "-hls_time", "6",
                 "-hls_list_size", "0",

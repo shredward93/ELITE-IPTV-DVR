@@ -396,12 +396,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
         # ── Completed recordings list ─────────────────────────────────────────
         elif path == "/recordings":
             recordings = self._list_recordings()
-            # Return HTML if browser/Kodi requests it, JSON otherwise
-            accept = self.headers.get("Accept", "")
-            if "html" in accept.lower() or qs.get("format", [""])[0].lower() == "html":
-                self._serve_recordings_html(recordings)
-            else:
-                self._json(recordings)
+            # Always return HTML - more compatible with Kodi and browsers
+            self._serve_recordings_html(recordings)
 
         # ── Completed recording file serving ──────────────────────────────────
         elif path.startswith("/recordings/"):

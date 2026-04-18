@@ -98,10 +98,18 @@
     <div class="sel-card">
       <div class="sel-name" id="sel-name"></div>
       <div class="sel-btns">
+        <button class="btn btn-green btn-sm" onclick="playChannel()">▶ Play</button>
         <button class="btn btn-red btn-sm" onclick="openModal(true)">Record Now</button>
         <button class="btn btn-blue btn-sm" onclick="openModal(false)">Schedule</button>
         <button class="btn btn-sm btn-gray" id="fav-btn" onclick="toggleFav()">Save</button>
         <button class="btn btn-gray btn-sm" onclick="setBackup()">Set Backup</button>
+      </div>
+      <div id="player-panel" style="display:none;margin:12px 0;">
+        <video id="video-player" controls autoplay style="width:100%;max-height:320px;border-radius:12px;background:#000;"></video>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-gray btn-sm" onclick="stopPlayer()">Stop</button>
+          <span id="player-status" style="font-size:12px;color:#9ca3af;align-self:center;"></span>
+        </div>
       </div>
       <div id="epg-panel"><div class="empty">Loading guide…</div></div>
     </div>
@@ -594,6 +602,48 @@ function refreshLog(){
 document.getElementById('overlay').addEventListener('click',e=>{
   if(e.target===document.getElementById('overlay'))closeModal();
 });
+
+let currentStreamUrl=null;
+
+function playChannel(){
+  if(!selId){alert('Select a channel first');return;}
+  const video=document.getElementById('video-player');
+  const panel=document.getElementById('player-panel');
+  const status=document.getElementById('player-status');
+
+  fetch('/api/stream/url?channel_id='+encodeURIComponent(selId))
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d.proxy_url){throw new Error('No stream URL');}
+      currentStreamUrl=d.proxy_url;
+      panel.style.display='block';
+      status.textContent='Loading stream…';
+      video.src=currentStreamUrl;
+      video.play().then(()=>{
+        status.textContent='Playing: '+(d.channel_name||selName);
+      }).catch(e=>{
+        status.textContent='Playback error: '+e.message;
+      });
+      video.onerror=()=>{
+        status.textContent='Stream error - try again';
+      };
+    })
+    .catch(err=>{
+      alert('Failed to get stream: '+err.message);
+    });
+}
+
+function stopPlayer(){
+  const video=document.getElementById('video-player');
+  const panel=document.getElementById('player-panel');
+  const status=document.getElementById('player-status');
+  video.pause();
+  video.src='';
+  video.load();
+  currentStreamUrl=null;
+  panel.style.display='none';
+  status.textContent='';
+}
 
 refreshStatus();refreshFavs();refreshGuide();
 setInterval(refreshStatus,2000);

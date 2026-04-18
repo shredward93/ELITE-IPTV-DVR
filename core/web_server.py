@@ -427,6 +427,35 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def do_HEAD(self):
+        """Handle HEAD requests — Kodi uses these to get file sizes before playback."""
+        path = urlparse(self.path).path
+        if path.startswith("/recordings/"):
+            file_name = path[len("/recordings/"):]
+            if not file_name or "/" in file_name or ".." in file_name:
+                self.send_response(400)
+                self.end_headers()
+                return
+            rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
+            if not rec_dir:
+                self.send_response(503)
+                self.end_headers()
+                return
+            file_path = os.path.join(rec_dir, file_name)
+            if not os.path.exists(file_path):
+                self.send_response(404)
+                self.end_headers()
+                return
+            file_size = os.path.getsize(file_path)
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+        else:
+            self.send_response(200)
+            self.end_headers()
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body   = json.loads(self.rfile.read(length)) if length else {}

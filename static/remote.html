@@ -1658,17 +1658,22 @@ function attachStreamToVideo(video, info, status, channelName){
   const nativeHls = video.canPlayType('application/vnd.apple.mpegurl');
   const liveDvr = info.liveDvr === true;
   if(info.type==='hls'){
-    if(nativeHls){
+    const useNativeHls = nativeHls && !liveDvr;
+    if(useNativeHls){
       try{video.muted=false;}catch(e){}
       video.src=info.url;
       video.play().catch(()=>{status.textContent='Tap ▶ to start';});
     }else if(window.Hls && window.Hls.isSupported()){
       const cfg = liveDvr ? {
-        liveDurationInfinity:true,
-        backBufferLength:120,
-        maxBufferLength:30,
-        enableWorker:true,
-        lowLatencyMode:false,
+        liveDurationInfinity: false,
+        backBufferLength: Infinity,
+        maxBufferLength: 300,
+        maxMaxBufferLength: 900,
+        maxBufferSize: 200 * 1024 * 1024,
+        enableWorker: true,
+        lowLatencyMode: false,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: Infinity,
       } : {
         liveDurationInfinity:true,
         lowLatencyMode:false,
@@ -1707,6 +1712,10 @@ function attachStreamToVideo(video, info, status, channelName){
       video.addEventListener('playing', ()=>{
         if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
       });
+    }else if(nativeHls && liveDvr){
+      try{video.muted=false;}catch(e){}
+      video.src=info.url;
+      video.play().catch(()=>{status.textContent='Tap to play';});
     }else{
       status.textContent='HLS not supported in this browser';
     }

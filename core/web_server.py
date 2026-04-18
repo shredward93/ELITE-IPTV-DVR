@@ -11,8 +11,10 @@ import json
 import os
 import re
 import socket
+import subprocess
 import threading
 import time
+import urllib.parse
 
 import requests
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +27,84 @@ from core.dvr_manager import DVRManager
 from core.epg import build_guide_bundle, fetch_epg, fetch_multi_epg, filter_guide_categories
 from core.mobile_transcode import manager as mobile_transcode_manager
 from core.recorder import job_duration_secs
+
+
+class _RecordingHlsCache:
+    """
+    Remux a completed .ts recording to HLS (copy, no re-encode) on first
+    play, then cache the output directory for the container lifetime.
+
+    Uses per-filename locks so two simultaneous first-play requests for the
+    same file don't double-remux. Second and later plays return instantly.
+    Cache lives in /tmp/elite_rec_hls/ — auto-wiped on container restart.
+    """
+
+    _TMPDIR     = "/tmp/elite_rec_hls"
+    _cache:      dict[str, str]            = {}   # filename → outdir
+    _locks:      dict[str, threading.Lock] = {}
+    _meta_lock   = threading.Lock()
+
+    @classmethod
+    def _lock_for(cls, filename: str) -> threading.Lock:
+        with cls._meta_lock:
+            if filename not in cls._locks:
+                cls._locks[filename] = threading.Lock()
+            return cls._locks[filename]
+
+    @classmethod
+    def get_or_remux(cls, filename: str, ts_path: str) -> str | None:
+        """
+        Return path to the outdir that contains index.m3u8 + seg_*.ts files.
+        Blocks (in the calling request thread — ThreadingHTTPServer, so safe)
+        until ffmpeg finishes the remux. Returns None on failure.
+        """
+        with cls._lock_for(filename):
+            if filename in cls._cache:
+                return cls._cache[filename]
+
+            safe   = re.sub(r"[^\w.\-]", "_", filename)
+            outdir = os.path.join(cls._TMPDIR, safe)
+            os.makedirs(outdir, exist_ok=True)
+
+            playlist = os.path.join(outdir, "index.m3u8")
+            seg_pat  = os.path.join(outdir, "seg_%05d.ts")
+
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+                "-i", ts_path,
+                "-c", "copy",
+                "-f", "hls",
+                "-hls_time", "6",
+                "-hls_flags", "independent_segments+temp_file",
+                "-hls_segment_type", "mpegts",
+                "-hls_segment_filename", seg_pat,
+                playlist,
+            ]
+            print(f"[RecHLS] Remuxing '{filename}' → {outdir}")
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, timeout=600,
+                    **config._SUBPROCESS_FLAGS,
+                )
+                if result.returncode != 0:
+                    tail = result.stderr.decode("utf-8", errors="replace")[-600:]
+                    print(f"[RecHLS] ffmpeg failed rc={result.returncode}\n{tail}")
+                    return None
+                print(f"[RecHLS] Done remuxing '{filename}'")
+                cls._cache[filename] = outdir
+                return outdir
+            except subprocess.TimeoutExpired:
+                print(f"[RecHLS] Timeout remuxing '{filename}'")
+                return None
+            except Exception as e:
+                print(f"[RecHLS] Error remuxing '{filename}': {e}")
+                return None
+
+    @classmethod
+    def invalidate(cls, filename: str) -> None:
+        """Remove a cache entry (e.g. if the source file is deleted)."""
+        with cls._meta_lock:
+            cls._cache.pop(filename, None)
 
 
 class StreamMuxer:
@@ -311,6 +391,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
         # ── Android TV: structured recordings list ────────────────────────────
         elif path == "/api/recordings":
             self._json(self._build_recordings_response())
+
+        # ── Mobile webapp: HLS remux of a completed recording ─────────────────
+        # /api/recordings/hls/<encoded_filename>/index.m3u8
+        # /api/recordings/hls/<encoded_filename>/seg_NNNNN.ts
+        elif path.startswith("/api/recordings/hls/"):
+            self._serve_recording_hls(path)
 
         # ── Android TV: stream proxy URL ──────────────────────────────────────
         elif path == "/api/stream/url":
@@ -858,6 +944,78 @@ class RemoteHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _serve_recording_hls(self, path: str) -> None:
+        """
+        Serve a completed recording as HLS. On first request, blocks while
+        ffmpeg remuxes the .ts to HLS (copy — no re-encode). Subsequent
+        requests are served instantly from the cache.
+
+        URL structure:
+          /api/recordings/hls/<url-encoded-filename>/index.m3u8
+          /api/recordings/hls/<url-encoded-filename>/seg_NNNNN.ts
+        """
+        # Parse: ['', 'api', 'recordings', 'hls', '<filename>', '<leaf>']
+        stripped = path[len("/api/recordings/hls/"):]   # "filename/leaf"
+        slash    = stripped.rfind("/")
+        if slash < 0:
+            self._error(400, "Bad path"); return
+        filename = unquote(stripped[:slash])
+        leaf     = stripped[slash + 1:]
+
+        if not filename or not leaf:
+            self._error(400, "Bad path"); return
+
+        # Security: no path traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            self._error(400, "Invalid filename"); return
+
+        rec_dir = self.ctx.get_recordings_dir() if self.ctx.get_recordings_dir else None
+        if not rec_dir:
+            self._error(503, "Recordings dir not configured"); return
+
+        ts_path = os.path.join(rec_dir, filename)
+        if not os.path.isfile(ts_path):
+            self._error(404, f"Recording not found: {filename}"); return
+
+        # Remux (blocks until done, uses cache on repeat requests)
+        outdir = _RecordingHlsCache.get_or_remux(filename, ts_path)
+        if outdir is None:
+            self._error(500, "Remux failed — see container logs"); return
+
+        target = os.path.join(outdir, leaf)
+        if not os.path.isfile(target):
+            self._error(404, f"Not found in HLS output: {leaf}"); return
+
+        if leaf.endswith(".m3u8"):
+            # Rewrite bare segment names in the playlist to full API paths
+            base = f"/api/recordings/hls/{urllib.parse.quote(filename, safe='')}"
+            try:
+                with open(target, "r", errors="replace") as f:
+                    pl = f.read()
+                # ffmpeg writes bare names like "seg_00001.ts"; prefix them
+                pl = re.sub(
+                    r"^(seg_\d+\.ts)$",
+                    lambda m: f"{base}/{m.group(1)}",
+                    pl,
+                    flags=re.MULTILINE,
+                )
+                data = pl.encode()
+            except Exception as exc:
+                self._error(500, f"Playlist rewrite error: {exc}"); return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            # Segment file — use the existing range-aware file server
+            self._serve_file_range(target)
+
     def _build_recordings_response(self) -> dict:
         """
         Structured recordings list for the mobile webapp + Android TV.
@@ -922,6 +1080,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 "recorded_at":   rec["recorded_at"],
                 "ts_url":        abs_url,
                 "download_url":  abs_url,
+                # HLS remux URL — the server will convert to HLS on first fetch.
+                "hls_url":       f"/api/recordings/hls/{_q(fn)}/index.m3u8",
                 # VLC deep links — absolute path; the client fills in the host
                 # via window.location.origin before use.
                 "vlc_path":      f"/recordings/{_q(fn)}",

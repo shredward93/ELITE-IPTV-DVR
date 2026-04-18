@@ -1356,10 +1356,39 @@ function renderActiveRec(r, i){
       </div>
     </div>`;
 }
+function startRecordingPlay(hlsUrl, tsUrl, cardId){
+  // Show a "Converting…" status while the server remuxes .ts → HLS.
+  // The fetch blocks server-side until done; second play is instant (cached).
+  const card=document.getElementById(cardId);
+  if(!card) return;
+  let statusEl=card.querySelector('.rec-convert-status');
+  if(!statusEl){
+    statusEl=document.createElement('div');
+    statusEl.className='rec-convert-status rec-meta';
+    statusEl.style.marginTop='6px';
+    const actionsEl=card.querySelector('.rec-actions');
+    if(actionsEl) card.insertBefore(statusEl, actionsEl);
+    else card.appendChild(statusEl);
+  }
+  statusEl.textContent='Converting… (first play only, please wait)';
+  // GET triggers the remux on the server and blocks until ffmpeg finishes.
+  // On success the playlist body is returned; we discard it and let the
+  // player re-fetch it (instant — hits the server-side cache).
+  fetch(hlsUrl)
+    .then(r=>{
+      if(!r.ok) throw new Error('remux failed: '+r.status);
+      statusEl.textContent='';
+      playRecordingInline('hls', hlsUrl, cardId);
+    })
+    .catch(err=>{
+      statusEl.textContent='Convert failed — try Download instead ('+err.message+')';
+    });
+}
 function renderCompletedRec(r, i){
   const id='rec-done-'+i;
   const abs=absoluteUrl(r.ts_url);
   const vlc=vlcDeepLink(abs);
+  const hlsUrl=r.hls_url||null;
   return `
     <div class="rec-card" id="${id}">
       <div class="rec-card-head">
@@ -1367,7 +1396,7 @@ function renderCompletedRec(r, i){
       </div>
       <div class="rec-meta">${esc(fmtDate(r.recorded_at))} · ${esc(fmtBytes(r.size_bytes))}</div>
       <div class="rec-actions">
-        <button class="btn primary btn-sm" onclick="playRecordingInline('ts','${esc(r.ts_url)}','${id}')">▶  Play</button>
+        ${hlsUrl?`<button class="btn primary btn-sm" onclick="startRecordingPlay('${esc(hlsUrl)}','${esc(r.ts_url)}','${id}')">▶  Play</button>`:''}
         <a class="btn ghost btn-sm" href="${esc(vlc)}">Open in VLC</a>
         <a class="btn ghost btn-sm" href="${esc(r.download_url)}" download>⤓  Download</a>
       </div>

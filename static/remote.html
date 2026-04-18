@@ -104,6 +104,49 @@
   }
   .backup-chip button:hover{border-color:var(--paper-muted); color:var(--paper)}
 
+  /* RECORDING BANNER */
+  .rec-banner{
+    display:none; align-items:center; gap:10px;
+    margin-top:10px; padding:9px 12px;
+    background:rgba(255,46,77,.12);
+    border:1px solid rgba(255,46,77,.35);
+    border-radius:10px;
+  }
+  .rec-banner.visible{display:flex}
+  .rec-dot{
+    width:9px; height:9px; border-radius:50%;
+    background:var(--live); flex-shrink:0;
+    animation:blink .9s step-end infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+  .rec-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; letter-spacing:0.18em;
+    text-transform:uppercase; color:var(--live);
+    font-weight:500; flex-shrink:0;
+  }
+  .rec-channel{
+    font-size:13px; font-weight:600;
+    color:var(--paper); flex:1; min-width:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .rec-stop{
+    background:var(--live); border:0;
+    color:white; padding:5px 10px;
+    border-radius:6px; cursor:pointer;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; letter-spacing:0.1em;
+    text-transform:uppercase; font-weight:500;
+    flex-shrink:0; transition:background .15s;
+  }
+  .rec-stop:hover{background:#ff4c68}
+  .rec-more{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; color:rgba(255,46,77,.8);
+    letter-spacing:0.06em; cursor:pointer;
+    text-decoration:underline; flex-shrink:0;
+  }
+
   /* SEARCH */
   .search-wrap{margin:14px 20px 0}
   .search-input-wrap{position:relative}
@@ -499,6 +542,13 @@
       <strong id="backup-name-disp"></strong>
       <button onclick="clearBackup()">Clear</button>
     </div>
+    <div id="rec-banner" class="rec-banner">
+      <span class="rec-dot"></span>
+      <span class="rec-label">REC</span>
+      <span class="rec-channel" id="rec-banner-name"></span>
+      <button class="rec-stop" id="rec-banner-stop" onclick="stopJobFromBanner()">■ Stop</button>
+      <span class="rec-more" id="rec-banner-more" style="display:none" onclick="switchTab('recs')"></span>
+    </div>
   </header>
 
   <div class="search-wrap">
@@ -701,7 +751,7 @@ function renderGuideCategories(){
   const el=document.getElementById('guide-categories');
   if(!el)return;
   const categories=(guideCategories||[]).filter(isAllowedGuideCategory);
-  if(!categories.length){el.innerHTML='<div class="guide-empty">No matching categories found.</div>';return}
+  if(!categories.length){el.innerHTML='<div class="guide-empty">No matching categories found.</div>';el.style.display='grid';return}
   if(guideSelectedCategoryId && !categories.some(c=>c.category_id===guideSelectedCategoryId)){
     guideSelectedCategoryId='';
     guideBundle=null;
@@ -709,8 +759,15 @@ function renderGuideCategories(){
     updateGuideMeta();
     document.getElementById('guide-panel').innerHTML='<div class="guide-empty">Select a category to load its channels.</div>';
   }
+  // Collapse category grid when one is selected; otherwise show all options
+  if(guideSelectedCategoryId){
+    el.style.display='none';
+    el.innerHTML='';
+    return;
+  }
+  el.style.display='grid';
   el.innerHTML=categories.map(cat=>`
-    <button class="guide-category-card ${guideSelectedCategoryId===cat.category_id?'active':''}" data-category-id="${escAttr(cat.category_id)}" onclick="selectGuideCategory(this.dataset.categoryId)">
+    <button class="guide-category-card" data-category-id="${escAttr(cat.category_id)}" onclick="selectGuideCategory(this.dataset.categoryId)">
       ${esc(cat.category_name)}
       <small>Tap to load</small>
     </button>`).join('');
@@ -791,7 +848,10 @@ function selectGuideCategory(categoryId){
   guideBundle=null;
   renderGuideCategories();
   renderGuidePanel();
-  refreshGuide(true);
+  refreshGuide(true).then(()=>{
+    const el=document.getElementById('guide-panel');
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  });
 }
 function clearGuideSelection(){
   guideSelectedCategoryId='';
@@ -852,7 +912,8 @@ function refreshStatus(){
     const count=d.recordings.length;
     const recCountEl=document.getElementById('rec-count');
     const led=document.getElementById('status-led');
-    const anyRecording=d.recordings.some(r=>r.status==='recording');
+    const activeRecs=d.recordings.filter(r=>r.status==='recording'&&r.stoppable);
+    const anyRecording=activeRecs.length>0;
     if(count){
       recCountEl.textContent=count;
       recCountEl.className=anyRecording?'count live':'count';
@@ -861,6 +922,24 @@ function refreshStatus(){
       recCountEl.className='count';
     }
     led.classList.toggle('live', anyRecording);
+    // Recording banner
+    const banner=document.getElementById('rec-banner');
+    const bannerName=document.getElementById('rec-banner-name');
+    const bannerStop=document.getElementById('rec-banner-stop');
+    const bannerMore=document.getElementById('rec-banner-more');
+    if(anyRecording){
+      banner.classList.add('visible');
+      bannerName.textContent=activeRecs[0].name;
+      bannerStop.dataset.index=d.recordings.findIndex(r=>r===activeRecs[0]);
+      if(activeRecs.length>1){
+        bannerMore.textContent=`+${activeRecs.length-1} more`;
+        bannerMore.style.display='inline';
+      }else{
+        bannerMore.style.display='none';
+      }
+    }else{
+      banner.classList.remove('visible');
+    }
     if(!count){el.innerHTML='<div class="empty">No active recordings</div>';return}
     el.innerHTML=d.recordings.map((r,i)=>`
       <div class="card${r.status==='recording'?' active-rec':''}">
@@ -1003,6 +1082,12 @@ function setBackup(){
 }
 function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refreshStatus();toast('Backup cleared');});}
 function stopJob(i){
+  if(!confirm('Stop this recording?'))return;
+  fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
+    .then(()=>{refreshStatus();toast('Stop requested');});
+}
+function stopJobFromBanner(){
+  const i=parseInt(document.getElementById('rec-banner-stop').dataset.index||'0');
   if(!confirm('Stop this recording?'))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
     .then(()=>{refreshStatus();toast('Stop requested');});

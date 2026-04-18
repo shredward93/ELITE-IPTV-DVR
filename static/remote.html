@@ -1597,6 +1597,7 @@ function buildStreamUrl(channelId, profile){
 }
 function tearDownPlayer(){
   const video=document.getElementById('video-player');
+  if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
   try{video.pause();}catch(e){}
   if(currentHls){
     try{currentHls.destroy();}catch(e){}
@@ -1617,6 +1618,7 @@ function attachStreamToVideo(video, info, status, channelName){
         lowLatencyMode:false,
         backBufferLength:30,
         maxBufferLength:20,
+        liveSyncDurationCount:3,
       });
       currentHls.loadSource(info.url);
       currentHls.attachMedia(video);
@@ -1625,8 +1627,29 @@ function attachStreamToVideo(video, info, status, channelName){
       });
       currentHls.on(window.Hls.Events.ERROR, (_,data)=>{
         if(data.fatal){
-          status.textContent='HLS error: '+data.type;
+          if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR){
+            status.textContent='Reconnecting…';
+            currentHls.startLoad();
+          } else {
+            status.textContent='HLS error: '+data.type;
+          }
+        } else if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR){
+          currentHls.startLoad();
         }
+      });
+      // Auto-resume when the browser stalls waiting for data
+      video.addEventListener('waiting', ()=>{
+        if(video._stallTimer) return;
+        video._stallTimer=setTimeout(()=>{
+          video._stallTimer=null;
+          if(currentHls && (video.paused || video.readyState<3)){
+            currentHls.startLoad();
+            video.play().catch(()=>{});
+          }
+        }, 2500);
+      });
+      video.addEventListener('playing', ()=>{
+        if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
       });
     }else{
       status.textContent='HLS not supported in this browser';

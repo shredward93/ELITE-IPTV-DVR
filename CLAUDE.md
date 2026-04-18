@@ -34,4 +34,8 @@ IMPLEMENTATION.md  Full feature plan — read this first on any new task
 - DVR buffer segments live in a separate folder from completed scheduled recordings.
 - Both DVR caps (hours AND GB) must always be enforced together.
 - HTTP range requests are required on all file-serving endpoints (`/dvr/stream/`, `/recordings/`).
-- Keep responses terse. No trailing summaries.
+
+## Communication Style
+- **Maximum terseness:** 1–2 sentences per response. No preamble, no compliments, no small talk. Direct answer only.
+- **No trailing summaries:** User reads diffs themselves.
+- **Assume senior engineer:** Skip basic explanations.

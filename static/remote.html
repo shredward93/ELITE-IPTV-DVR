@@ -655,7 +655,7 @@
     <section id="pane-recs" class="pane">
       <div class="pane-head">
         <h2 class="pane-title">Recordings</h2>
-        <button class="mini-btn" onclick="refreshRecordings()">↻  Refresh</button>
+        <button class="mini-btn" onclick="refreshRecordings(true)">↻  Refresh</button>
       </div>
       <div id="recordings"><div class="empty">Loading recordings…</div></div>
     </section>
@@ -1114,7 +1114,7 @@ function confirmSchedule(){
     closeModal();
     toast(d.message || (isRecordNow?'Recording started':'Scheduled'));
     refreshStatus();
-    refreshRecordings();
+    refreshRecordings(true);
     switchTab('recs');
   }).catch(()=>toast('Error'));
 }
@@ -1128,13 +1128,13 @@ function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refr
 function stopJob(i){
   if(!confirm('Stop this recording?'))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
-    .then(()=>{refreshStatus();refreshRecordings();toast('Stop requested');});
+    .then(()=>{refreshStatus();refreshRecordings(true);toast('Stop requested');});
 }
 function stopJobFromBanner(){
   const i=parseInt(document.getElementById('rec-banner-stop').dataset.index||'0');
   if(!confirm('Stop this recording?'))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
-    .then(()=>{refreshStatus();refreshRecordings();toast('Stop requested');});
+    .then(()=>{refreshStatus();refreshRecordings(true);toast('Stop requested');});
 }
 
 /* ═══ LOG ═══ */
@@ -1295,10 +1295,25 @@ function fmtDuration(secs){
   return s+'s';
 }
 function vlcDeepLink(absUrl){
-  // iOS: vlc-x-callback URL.  Android + desktop: vlc:// prefix (most VLC builds register it).
+  // iOS: vlc-x-callback URL.
+  // Android: Chrome intent URL (vlc:// is unreliable — Chrome won't hand off to
+  //          VLC, and concatenating vlc://https://… creates an invalid scheme).
+  // Desktop: vlc:// prefix (works if the VLC protocol handler is registered).
   const ua = navigator.userAgent;
   if(/iPhone|iPad|iPod/i.test(ua)){
     return 'vlc-x-callback://x-callback-url/stream?url='+encodeURIComponent(absUrl);
+  }
+  if(/Android/i.test(ua)){
+    // Strip the scheme — Chrome's intent URL builds its own from the `scheme=` param.
+    const m = absUrl.match(/^([a-z]+):\/\/(.*)$/i);
+    const scheme = m ? m[1] : 'https';
+    const rest   = m ? m[2] : absUrl;
+    return 'intent://'+rest
+      +'#Intent;scheme='+scheme
+      +';package=org.videolan.vlc'
+      +';type=video/mp2t'
+      +';S.browser_fallback_url='+encodeURIComponent(absUrl)
+      +';end';
   }
   return 'vlc://'+absUrl;
 }
@@ -1402,7 +1417,24 @@ function renderCompletedRec(r, i){
       </div>
     </div>`;
 }
-function refreshRecordings(){
+function hasActiveInlinePlayback(){
+  // Skip DOM replacement while a recording is mid-playback, or while a
+  // remux fetch is in flight — otherwise innerHTML='...' destroys the
+  // <video> element and playback dies after the next 5s tick.
+  const el=document.getElementById('recordings');
+  if(!el) return false;
+  if(el.querySelector('.rec-convert-status')) return true;
+  const vids=el.querySelectorAll('.rec-inline-player video');
+  for(const v of vids){
+    if(!v.ended && !v.paused) return true;
+    // Also hold off if the user paused the video deliberately — we don't
+    // want to yank the scrubber out from under them mid-scrub either.
+    if(v.readyState>0 && v.currentTime>0 && !v.ended) return true;
+  }
+  return false;
+}
+function refreshRecordings(force){
+  if(!force && hasActiveInlinePlayback()) return;
   fetch('/api/recordings').then(r=>r.json()).then(d=>{
     const el=document.getElementById('recordings');
     const active    = Array.isArray(d.active)    ? d.active    : [];

@@ -13,7 +13,7 @@ class RecordingJob:
 
     _next_id = 0
 
-    def __init__(self, channel_name, channel_id, start_time, duration_mins, output_dir):
+    def __init__(self, channel_name, channel_id, start_time, duration_mins, output_dir, custom_name=None):
         RecordingJob._next_id += 1
         self.id            = RecordingJob._next_id
         self.channel_name  = channel_name
@@ -22,6 +22,7 @@ class RecordingJob:
         self.duration_mins = duration_mins
         self.duration_secs = duration_mins * 60
         self.output_dir    = output_dir
+        self.custom_name   = (custom_name or "").strip() or None
 
         self.status          = "waiting"
         self.process         = None
@@ -70,7 +71,8 @@ def run_job(job):
     job.status       = "recording"
     job.actual_start = datetime.datetime.now()
     date_str  = job.actual_start.strftime("%Y-%m-%d_%H-%M")
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in job.channel_name)[:60].strip()
+    name_for_file = job.custom_name or job.channel_name
+    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name_for_file)[:60].strip()
     base_path = os.path.join(job.output_dir, f"{safe_name}_{date_str}")
 
     active_id         = job.channel_id

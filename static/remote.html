@@ -558,6 +558,74 @@
   .field input:focus{border-color:var(--signal); box-shadow:0 0 0 3px var(--signal-soft)}
   .modal-btns{display:flex; gap:8px; margin-top:18px}
 
+  /* ── Time pickers ─────────────────────────────────────────────────────── */
+  .time-row{display:flex; gap:10px; margin-bottom:12px}
+  .time-col{flex:1; min-width:0}
+  .time-col > span{
+    display:block;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; color:var(--paper-muted);
+    letter-spacing:0.14em; text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .time-pill{
+    width:100%;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px;
+    background:var(--ink-soft); border:1px solid var(--rule);
+    border-radius:10px; color:var(--paper);
+    font-family:'Manrope',sans-serif; font-size:15px;
+    cursor:pointer; user-select:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .time-pill:hover{border-color:var(--signal)}
+  .time-pill.open{
+    border-color:var(--signal);
+    box-shadow:0 0 0 3px var(--signal-soft);
+    border-bottom-left-radius:0; border-bottom-right-radius:0;
+  }
+  .time-pill .caret{
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+    color:var(--paper-muted); margin-left:8px;
+    transition:transform .2s;
+  }
+  .time-pill.open .caret{transform:rotate(180deg)}
+  .time-list{
+    display:none;
+    max-height:216px; overflow-y:auto;
+    margin-top:-1px;
+    background:var(--ink-soft);
+    border:1px solid var(--signal);
+    border-top:1px solid var(--rule);
+    border-bottom-left-radius:10px; border-bottom-right-radius:10px;
+    box-shadow:0 8px 20px rgba(0,0,0,.35);
+  }
+  .time-list.open{display:block}
+  .time-opt{
+    padding:10px 14px;
+    font-family:'Manrope',sans-serif; font-size:14px;
+    color:var(--paper); cursor:pointer;
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-left:2px solid transparent;
+  }
+  .time-opt:hover{background:rgba(255,255,255,.04); border-left-color:var(--rule)}
+  .time-opt.selected{
+    background:var(--signal-soft);
+    border-left-color:var(--signal);
+    color:var(--signal);
+  }
+  .time-opt .meta{
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+    color:var(--paper-muted); letter-spacing:0.08em;
+  }
+  .time-opt.selected .meta{color:var(--signal)}
+  .time-duration{
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+    color:var(--paper-muted); letter-spacing:0.14em; text-transform:uppercase;
+    margin:-4px 0 14px; text-align:center;
+  }
+  .time-duration b{color:var(--signal); font-weight:600}
+
   /* SCROLLBARS */
   ::-webkit-scrollbar{width:8px; height:8px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -693,13 +761,26 @@
 <div class="overlay" id="overlay">
   <div class="modal">
     <h2 id="modal-title">Schedule Recording</h2>
-    <label class="field" id="field-time">
-      <span>Start Time</span>
-      <input type="text" id="m-time" placeholder="07:00 PM">
-    </label>
+    <div id="field-time" class="time-row">
+      <div class="time-col">
+        <span>Start</span>
+        <div class="time-pill" id="m-start-pill" onclick="togglePicker('start')">
+          <span id="m-start-label">—</span><span class="caret">▾</span>
+        </div>
+        <div class="time-list" id="m-start-list"></div>
+      </div>
+      <div class="time-col">
+        <span>End</span>
+        <div class="time-pill" id="m-end-pill" onclick="togglePicker('end')">
+          <span id="m-end-label">—</span><span class="caret">▾</span>
+        </div>
+        <div class="time-list" id="m-end-list"></div>
+      </div>
+    </div>
+    <div class="time-duration" id="m-duration-meta">Duration · <b>—</b></div>
     <label class="field">
-      <span>Duration (minutes)</span>
-      <input type="number" id="m-dur" placeholder="180" value="180">
+      <span>Recording Name · optional</span>
+      <input type="text" id="m-name" placeholder="Leave blank to use channel name" maxlength="80">
     </label>
     <div class="modal-btns">
       <button class="btn primary" style="flex:1" onclick="confirmSchedule()">Confirm</button>
@@ -903,6 +984,12 @@ function selectGuideChannel(channelId, channelName){
   guideSelectedChannelId=String(channelId||'');
   renderGuidePanel();
   selectChannel(channelId, channelName);
+  // Jump user up to the program guide that just loaded, not leave them
+  // looking at the category's channel list.
+  requestAnimationFrame(()=>{
+    const target=document.getElementById('sel-card');
+    if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
+  });
 }
 function selectGuideCategory(categoryId){
   guideSelectedCategoryId=String(categoryId||'');
@@ -952,11 +1039,19 @@ async function refreshGuide(force=false){
 
 function openGuideSchedule(channelId, channelName, startValue, stopValue){
   selectChannel(channelId, channelName);
+  openModal(false);
   const startMs=parseGuideTime(startValue);
   const stopMs=parseGuideTime(stopValue);
-  if(startMs!==null)document.getElementById('m-time').value=fmt12(startMs/1000);
-  if(startMs!==null && stopMs!==null)document.getElementById('m-dur').value=Math.max(1, Math.round((stopMs-startMs)/60000));
-  openModal(false);
+  if(startMs!==null){
+    mStart=snapTo30(new Date(startMs));
+    if(stopMs!==null){
+      mEnd=snapTo30(new Date(stopMs));
+      if(mEnd<=mStart) mEnd=new Date(mStart.getTime()+30*60000);
+    }else{
+      mEnd=new Date(mStart.getTime()+60*60000);
+    }
+    renderPickerSelection();
+  }
 }
 
 /* ═══ STATUS ═══ */
@@ -1097,10 +1192,137 @@ function renderEpg(listings){
     </div>`;
   }).join('');
 }
-function setEpgTime(t, d){
-  document.getElementById('m-time').value=t;
-  if(d)document.getElementById('m-dur').value=d;
+function setEpgTime(startStr, durMins){
+  // Called from the per-listing "Set" button in the EPG.
+  // Parse 12h "7:00 PM" → Date today, snap to nearest prior 30m, open modal.
   openModal(false);
+  const start=parseTimeString(startStr);
+  if(start){
+    mStart=snapTo30(start);
+    mEnd=new Date(mStart.getTime()+(durMins||60)*60000);
+    mEnd=snapTo30(mEnd);
+    if(mEnd<=mStart)mEnd=new Date(mStart.getTime()+30*60000);
+    renderPickerSelection();
+  }
+}
+
+/* ═══ MODAL · Time pickers ═══ */
+let mStart=null, mEnd=null, mOpenPicker=null;
+
+function snapTo30(d){
+  const x=new Date(d.getTime());
+  const m=x.getMinutes();
+  x.setSeconds(0,0);
+  x.setMinutes(m<30?0:30);
+  return x;
+}
+function nextHalfHour(d){
+  const x=new Date(d.getTime());
+  x.setSeconds(0,0);
+  const m=x.getMinutes();
+  if(m===0||m===30){ /* already on boundary — advance to next slot */ }
+  x.setMinutes(m<30?30:60);
+  return x;
+}
+function fmtPill(d){
+  if(!d)return '—';
+  let h=d.getHours(),m=d.getMinutes();
+  const p=h>=12?'PM':'AM'; h=h%12||12;
+  return h+':'+(m<10?'0'+m:m)+' '+p;
+}
+function parseTimeString(s){
+  // "7:00 PM" → Date today at that time (tomorrow if already past)
+  const m=/^(\d{1,2}):(\d{2})\s*([AP]M)$/i.exec((s||'').trim());
+  if(!m)return null;
+  let h=parseInt(m[1]),mm=parseInt(m[2]);
+  const pm=/pm/i.test(m[3]);
+  if(h===12)h=0;
+  if(pm)h+=12;
+  const d=new Date(); d.setHours(h,mm,0,0);
+  if(d<new Date()) d.setDate(d.getDate()+1);
+  return d;
+}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
+function dayTag(d, anchor){
+  if(sameDay(d,anchor))return '';
+  const tomorrow=new Date(anchor); tomorrow.setDate(tomorrow.getDate()+1);
+  if(sameDay(d,tomorrow))return 'TOMORROW';
+  return d.toLocaleDateString(undefined,{weekday:'short'}).toUpperCase();
+}
+function buildTimeOptions(anchorStart, count){
+  // 48 slots × 30m. For start: anchor = next upcoming 30m from now. For end: anchor = mStart + 30m.
+  const out=[];
+  for(let i=0;i<count;i++){
+    const d=new Date(anchorStart.getTime()+i*30*60000);
+    out.push(d);
+  }
+  return out;
+}
+function renderTimeList(type){
+  const listEl=document.getElementById(type==='start'?'m-start-list':'m-end-list');
+  const today=new Date();
+  let anchor, selected;
+  if(type==='start'){
+    anchor=nextHalfHour(today);
+    selected=mStart;
+  }else{
+    anchor=mStart ? new Date(mStart.getTime()+30*60000) : nextHalfHour(today);
+    selected=mEnd;
+  }
+  const opts=buildTimeOptions(anchor, 48);
+  const refDay=type==='start'?today:(mStart||today);
+  listEl.innerHTML=opts.map(d=>{
+    const sel=selected && d.getTime()===selected.getTime();
+    const tag=dayTag(d, refDay);
+    return `<div class="time-opt${sel?' selected':''}" data-ts="${d.getTime()}" onclick="pickTime('${type}',${d.getTime()})">
+      <span>${fmtPill(d)}</span>${tag?`<span class="meta">${tag}</span>`:''}
+    </div>`;
+  }).join('');
+  // Scroll selected into middle, or top if none.
+  if(selected){
+    const idx=opts.findIndex(d=>d.getTime()===selected.getTime());
+    if(idx>=0){ requestAnimationFrame(()=>{ listEl.scrollTop = Math.max(0, idx*40 - 80); }); }
+  }
+}
+function togglePicker(type){
+  if(mOpenPicker===type){ closePickers(); return; }
+  closePickers();
+  mOpenPicker=type;
+  document.getElementById('m-'+type+'-pill').classList.add('open');
+  const listEl=document.getElementById('m-'+type+'-list');
+  listEl.classList.add('open');
+  renderTimeList(type);
+}
+function closePickers(){
+  ['start','end'].forEach(t=>{
+    document.getElementById('m-'+t+'-pill').classList.remove('open');
+    document.getElementById('m-'+t+'-list').classList.remove('open');
+  });
+  mOpenPicker=null;
+}
+function pickTime(type, ts){
+  const d=new Date(ts);
+  if(type==='start'){
+    mStart=d;
+    if(!mEnd || mEnd<=mStart) mEnd=new Date(mStart.getTime()+60*60000);
+  }else{
+    mEnd=d;
+  }
+  renderPickerSelection();
+  closePickers();
+}
+function renderPickerSelection(){
+  document.getElementById('m-start-label').textContent=fmtPill(mStart);
+  document.getElementById('m-end-label').textContent=fmtPill(mEnd);
+  const meta=document.getElementById('m-duration-meta');
+  if(mStart && mEnd && mEnd>mStart){
+    const mins=Math.round((mEnd-mStart)/60000);
+    const h=Math.floor(mins/60), m=mins%60;
+    const txt = h>0 ? (h+'h'+(m?' '+m+'m':'')) : (m+'m');
+    meta.innerHTML='Duration · <b>'+txt+'</b>';
+  }else{
+    meta.innerHTML='Duration · <b>—</b>';
+  }
 }
 
 /* ═══ MODAL ═══ */
@@ -1108,20 +1330,35 @@ function openModal(now=false){
   if(!selId){toast('Select a channel first');return}
   isRecordNow=now;
   document.getElementById('modal-title').textContent=now?'Record Now · '+selName:'Schedule · '+selName;
-  document.getElementById('field-time').style.display=now?'none':'block';
+  const timeRow=document.getElementById('field-time');
+  const durMeta=document.getElementById('m-duration-meta');
+  timeRow.style.display=now?'none':'flex';
+  durMeta.style.display=now?'none':'block';
+  document.getElementById('m-name').value='';
+  if(!now){
+    // default: start at next 30m boundary, end 60m later
+    const d=nextHalfHour(new Date());
+    mStart=d;
+    mEnd=new Date(d.getTime()+60*60000);
+    renderPickerSelection();
+    closePickers();
+  }
   document.getElementById('overlay').classList.add('open');
 }
-function closeModal(){document.getElementById('overlay').classList.remove('open')}
+function closeModal(){closePickers();document.getElementById('overlay').classList.remove('open')}
 function confirmSchedule(){
-  const dur=parseInt(document.getElementById('m-dur').value);
-  if(!dur){toast('Enter duration');return}
-  let time='NOW';
+  const customName=document.getElementById('m-name').value.trim();
+  let time='NOW', dur=60;
   if(!isRecordNow){
-    time=document.getElementById('m-time').value.trim();
-    if(!time){toast('Enter a start time');return}
+    if(!mStart || !mEnd){toast('Pick start and end times');return}
+    if(mEnd<=mStart){toast('End must be after start');return}
+    dur=Math.round((mEnd-mStart)/60000);
+    time=fmtPill(mStart);
   }
+  const body={channel_id:selId,channel_name:selName,start_time:time,duration_mins:dur};
+  if(customName) body.custom_name=customName;
   fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({channel_id:selId,channel_name:selName,start_time:time,duration_mins:dur})
+    body:JSON.stringify(body)
   }).then(r=>r.json()).then(d=>{
     closeModal();
     toast(d.message || (isRecordNow?'Recording started':'Scheduled'));
@@ -1130,6 +1367,13 @@ function confirmSchedule(){
     switchTab('recs');
   }).catch(()=>toast('Error'));
 }
+
+// Close open picker when tapping outside the modal.
+document.addEventListener('click', e=>{
+  if(!mOpenPicker) return;
+  if(e.target.closest('.time-pill')||e.target.closest('.time-list')) return;
+  closePickers();
+});
 function setBackup(){
   if(!selId)return;
   fetch('/api/backup/set',{method:'POST',headers:{'Content-Type':'application/json'},

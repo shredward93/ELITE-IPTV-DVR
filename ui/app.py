@@ -676,7 +676,8 @@ class IPTVRecorderApp(ctk.CTk):
                     start_time += datetime.timedelta(days=1)
             job = RecordingJob(
                 action["channel_name"], action["channel_id"],
-                start_time, int(action["duration_mins"]), self.output_dir
+                start_time, int(action["duration_mins"]), self.output_dir,
+                custom_name=action.get("custom_name"),
             )
             job.backup_channel_id   = self.backup_channel_id
             job.backup_channel_name = self.backup_channel_name

@@ -273,20 +273,36 @@
   .rec-actions{display:flex; gap:6px; flex-wrap:wrap}
   .rec-actions .btn{padding:7px 11px; font-size:12px}
   .rec-actions a.btn{text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
-  .rec-inline-player{margin-top:10px; position:relative}
-  .rec-inline-player video{width:100%; max-height:260px; background:#000; border-radius:8px 8px 0 0; border:1px solid var(--rule); border-bottom:none; display:block}
-  .rec-inline-close{position:absolute; top:6px; right:6px; width:30px; height:30px; border-radius:50%; border:none; background:rgba(0,0,0,0.7); color:#fff; font-size:16px; line-height:30px; text-align:center; cursor:pointer; padding:0; z-index:2}
-  .rec-inline-close:hover{background:rgba(255,0,0,0.8)}
-  .rec-player-bar{background:#1a1a1a; border:1px solid var(--rule); border-top:none; border-radius:0 0 8px 8px; padding:8px 10px 10px; display:flex; flex-direction:column; gap:6px}
-  .rec-seek-row{display:flex; align-items:center; gap:8px; font-size:11px; color:#aaa}
-  .rec-seek-row input[type=range]{flex:1; height:4px; accent-color:var(--accent); cursor:pointer}
-  .rec-seek-time{min-width:36px; text-align:right; font-variant-numeric:tabular-nums}
-  .rec-seek-dur{min-width:36px; text-align:left; font-variant-numeric:tabular-nums}
-  .rec-ctrl-row{display:flex; align-items:center; justify-content:center; gap:10px}
-  .rec-ctrl-btn{background:none; border:1px solid var(--rule); color:var(--fg); border-radius:6px; padding:5px 12px; font-size:13px; cursor:pointer; line-height:1}
-  .rec-ctrl-btn:hover{background:var(--ink-soft)}
-  .rec-ctrl-btn.play-pause{padding:6px 18px; font-size:16px; background:var(--accent); border-color:var(--accent); color:#fff; border-radius:8px}
-  .rec-ctrl-btn.play-pause:hover{opacity:.85}
+  .rec-inline-player{margin-top:10px; border-radius:10px; overflow:hidden; border:1px solid var(--rule); box-shadow:var(--shadow-md)}
+  .rec-video-wrap{position:relative; background:#000; line-height:0; user-select:none; -webkit-user-select:none}
+  .rec-inline-player video{width:100%; max-height:260px; background:#000; display:block}
+  .rec-inline-close{position:absolute; top:8px; right:8px; width:28px; height:28px; border-radius:50%; border:none; background:rgba(0,0,0,.75); color:#fff; font-size:14px; line-height:28px; text-align:center; cursor:pointer; padding:0; z-index:10; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px)}
+  .rec-inline-close:hover{background:rgba(255,46,77,.9)}
+  /* double-tap gesture zones */
+  .rec-tap-zone{position:absolute; top:0; bottom:0; z-index:6; display:flex; align-items:center; justify-content:center; cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation}
+  .rec-tap-left{left:0; width:35%}
+  .rec-tap-right{right:0; width:35%}
+  .rec-tap-ripple{position:absolute; width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,.2); transform:scale(0); opacity:0; pointer-events:none}
+  .rec-tap-ripple.pop{animation:tap-pop .4s ease-out forwards}
+  @keyframes tap-pop{0%{transform:scale(0);opacity:.8}100%{transform:scale(2.6);opacity:0}}
+  .rec-tap-label{position:relative; z-index:1; color:#fff; font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; letter-spacing:0.04em; text-shadow:0 1px 6px rgba(0,0,0,.7); opacity:0; transition:opacity .15s; pointer-events:none; padding:4px 8px; background:rgba(0,0,0,.4); border-radius:6px; white-space:nowrap}
+  .rec-tap-zone.active .rec-tap-label{opacity:1}
+  /* player bar */
+  .rec-player-bar{background:var(--surface-2); border-top:1px solid var(--rule); padding:8px 12px 10px; display:flex; flex-direction:column; gap:7px}
+  .rec-seek-row{display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; color:var(--paper-muted)}
+  .rec-seek-row input[type=range]{flex:1; height:3px; accent-color:var(--signal); cursor:pointer}
+  .rec-seek-time{min-width:36px; text-align:right; font-variant-numeric:tabular-nums; font-size:10px}
+  .rec-seek-dur{min-width:36px; text-align:left; font-variant-numeric:tabular-nums; font-size:10px}
+  .rec-ctrl-row{display:flex; align-items:center; gap:8px}
+  .rec-ctrl-btn{background:none; border:1px solid var(--rule); color:var(--paper); border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; line-height:1; transition:background .12s, border-color .12s; font-family:'Manrope',sans-serif}
+  .rec-ctrl-btn:hover{background:var(--surface-3); border-color:var(--paper-muted)}
+  .rec-ctrl-btn.play-pause{padding:7px 22px; font-size:16px; background:var(--signal); border-color:var(--signal); color:var(--ink); border-radius:10px; font-weight:700}
+  .rec-ctrl-btn.play-pause:hover{background:#ff9f5e; border-color:#ff9f5e}
+  .rec-ctrl-spacer{flex:1}
+  .rec-ctrl-btn.rec-pip-btn,.rec-ctrl-btn.rec-fs-btn{padding:6px 10px; font-size:15px}
+  /* fullscreen overrides */
+  .rec-inline-player:fullscreen video,.rec-inline-player:-webkit-full-screen video{max-height:100vh}
+  .rec-inline-player:fullscreen .rec-player-bar,.rec-inline-player:-webkit-full-screen .rec-player-bar{position:absolute; bottom:0; left:0; right:0; background:rgba(10,10,12,.85); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px)}
 
   /* EPG (selected channel) */
   #epg-panel{border-top:1px solid var(--rule); padding-top:14px; margin-top:4px}
@@ -1625,7 +1641,26 @@ function closeInlinePlayer(cardId){
     if(video._hls){try{video._hls.destroy();}catch(e){} video._hls=null;}
     try{video.removeAttribute('src'); video.load();}catch(e){}
   }
+  if(document.fullscreenElement===holder) document.exitFullscreen().catch(()=>{});
   holder.remove();
+}
+function _recPip(btn){
+  const v=btn.closest('.rec-inline-player').querySelector('video');
+  if(!v) return;
+  if(document.pictureInPictureElement){
+    document.exitPictureInPicture().catch(()=>{});
+  } else {
+    v.requestPictureInPicture().catch(()=>{});
+  }
+}
+function _recFullscreen(btn){
+  const wrap=btn.closest('.rec-inline-player');
+  if(!wrap) return;
+  if(!document.fullscreenElement){
+    (wrap.requestFullscreen||wrap.webkitRequestFullscreen||wrap.mozRequestFullScreen).call(wrap).catch(()=>{});
+  } else {
+    (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document).catch(()=>{});
+  }
 }
 function playRecordingInline(kind, src, cardId){
   // kind: 'hls' for in-progress (live playlist) or completed-remuxed HLS,
@@ -1636,22 +1671,31 @@ function playRecordingInline(kind, src, cardId){
   if(!holder){
     holder=document.createElement('div');
     holder.className='rec-inline-player';
+    const _pipBtn = document.pictureInPictureEnabled
+      ? '<button class="rec-ctrl-btn rec-pip-btn" title="Picture in Picture" onclick="_recPip(this)">⧉</button>'
+      : '';
     holder.innerHTML =
-      '<button class="rec-inline-close" title="Close" '
-      +  'onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
-      +'<video autoplay playsinline></video>'
-      +'<div class="rec-player-bar">'
-      +  '<div class="rec-seek-row">'
-      +    '<span class="rec-seek-time">0:00</span>'
-      +    '<input type="range" min="0" max="100" step="0.1" value="0">'
-      +    '<span class="rec-seek-dur">0:00</span>'
-      +  '</div>'
-      +  '<div class="rec-ctrl-row">'
-      +    '<button class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">⏪ 10s</button>'
-      +    '<button class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)">⏸</button>'
-      +    '<button class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">10s ⏩</button>'
-      +  '</div>'
-      +'</div>';
+      '<div class="rec-video-wrap">'
+      + '<button class="rec-inline-close" title="Close" onclick="closeInlinePlayer(\''+cardId+'\')">✕</button>'
+      + '<div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">⏪ 10s</span></div>'
+      + '<div class="rec-tap-zone rec-tap-right"><div class="rec-tap-ripple"></div><span class="rec-tap-label">10s ⏩</span></div>'
+      + '<video autoplay playsinline></video>'
+      + '</div>'
+      + '<div class="rec-player-bar">'
+      +   '<div class="rec-seek-row">'
+      +     '<span class="rec-seek-time">0:00</span>'
+      +     '<input type="range" min="0" max="100" step="0.1" value="0">'
+      +     '<span class="rec-seek-dur">0:00</span>'
+      +   '</div>'
+      +   '<div class="rec-ctrl-row">'
+      +     '<button class="rec-ctrl-btn" title="-10s" onclick="_recSkip(this,-10)">⏪ 10</button>'
+      +     '<button class="rec-ctrl-btn play-pause" onclick="_recTogglePlay(this)">⏸</button>'
+      +     '<button class="rec-ctrl-btn" title="+10s" onclick="_recSkip(this,10)">10 ⏩</button>'
+      +     '<span class="rec-ctrl-spacer"></span>'
+      +     _pipBtn
+      +     '<button class="rec-ctrl-btn rec-fs-btn" title="Fullscreen" onclick="_recFullscreen(this)">⛶</button>'
+      +   '</div>'
+      + '</div>';
     card.appendChild(holder);
     // Wire seek bar
     const seek=holder.querySelector('input[type=range]');
@@ -1671,6 +1715,22 @@ function playRecordingInline(kind, src, cardId){
     seek.addEventListener('touchstart',()=>{seek._dragging=true;},{passive:true});
     seek.addEventListener('input',()=>{ if(vid.duration) vid.currentTime=seek.value/100*vid.duration; });
     seek.addEventListener('change',()=>{ seek._dragging=false; });
+    // Double-tap zones: left = -10s, right = +10s
+    holder.querySelectorAll('.rec-tap-zone').forEach(zone=>{
+      let lastTap=0;
+      zone.addEventListener('click',e=>{
+        e.stopPropagation();
+        const now=Date.now(), dt=now-lastTap; lastTap=now;
+        if(dt<320){
+          const delta=zone.classList.contains('rec-tap-left')?-10:10;
+          if(vid) vid.currentTime=Math.max(0,Math.min(vid.duration||0,vid.currentTime+delta));
+          const rip=zone.querySelector('.rec-tap-ripple');
+          if(rip){rip.classList.remove('pop'); void rip.offsetWidth; rip.classList.add('pop');}
+          zone.classList.add('active');
+          setTimeout(()=>zone.classList.remove('active'),700);
+        }
+      });
+    });
   }
   const video=holder.querySelector('video');
   // One-video-at-a-time: pause every other <video> on the page first.

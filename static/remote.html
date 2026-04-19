@@ -350,6 +350,39 @@
     animation:rec-spin .9s linear infinite;
   }
   @keyframes rec-spin{to{transform:rotate(360deg)}}
+  /* Topbar: NAS transcode (Data saver) cold-start + mid-play rebuffer */
+  .rec-transcode-boot{
+    position:absolute; inset:0; z-index:7;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(6,8,12,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    opacity:0; visibility:hidden; pointer-events:none;
+    transition:opacity .28s ease, visibility .28s step-end;
+    text-align:center; padding:20px 16px;
+  }
+  .rec-transcode-boot.is-visible{
+    opacity:1; visibility:visible; pointer-events:auto;
+    transition:opacity .28s ease, visibility 0s step-start;
+  }
+  .rec-transcode-boot-inner{max-width:320px}
+  .rec-boot-ring{
+    width:48px; height:48px; margin:0 auto 14px;
+    border:3px solid rgba(255,255,255,.18);
+    border-top-color:var(--signal);
+    border-radius:50%;
+    animation:rec-spin .85s linear infinite;
+  }
+  .rec-boot-title{
+    font-family:'Fraunces',Georgia,serif;
+    font-style:italic; font-weight:500;
+    font-size:17px; color:var(--paper); margin:0 0 8px;
+    letter-spacing:-0.02em;
+  }
+  .rec-boot-hint{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px; line-height:1.55;
+    color:var(--paper-muted); letter-spacing:0.06em;
+    text-transform:uppercase; margin:0;
+  }
   /* Big center play button when paused */
   .rec-center-play{
     position:absolute; top:50%; left:50%;
@@ -939,6 +972,13 @@
       <div id="channel-inline-player" class="rec-inline-player paused">
         <div class="rec-video-wrap">
           <video id="video-player" autoplay playsinline webkit-playsinline x-webkit-airplay="allow"></video>
+          <div class="rec-transcode-boot" id="topbar-transcode-boot" aria-live="polite">
+            <div class="rec-transcode-boot-inner">
+              <div class="rec-boot-ring" aria-hidden="true"></div>
+              <p class="rec-boot-title">Preparing stream</p>
+              <p class="rec-boot-hint">Your NAS is opening the channel and encoding the first segment. Usually 5–20 seconds on a quiet network.</p>
+            </div>
+          </div>
           <div class="rec-spinner"></div>
           <div class="rec-tap-zone rec-tap-left"><div class="rec-tap-ripple"></div><span class="rec-tap-label">-10s</span></div>
           <div class="rec-tap-zone rec-tap-center"></div>
@@ -1843,7 +1883,29 @@ function buildStreamUrl(channelId, profile){
     type:'hls',
   };
 }
+function setTopbarTranscodeBoot(on, hintKey){
+  const boot=document.getElementById('topbar-transcode-boot');
+  const holder=document.getElementById('channel-inline-player');
+  const spin=holder&&holder.querySelector('.rec-spinner');
+  if(!boot) return;
+  boot.classList.toggle('is-visible',!!on);
+  if(on){
+    if(spin) spin.classList.add('visible');
+    const title=boot.querySelector('.rec-boot-title');
+    const hint=boot.querySelector('.rec-boot-hint');
+    if(hintKey==='buffer'){
+      if(title) title.textContent='Buffering';
+      if(hint) hint.textContent='Waiting for the next segment from your NAS.';
+    }else{
+      if(title) title.textContent='Preparing stream';
+      if(hint) hint.textContent='Your NAS is opening the channel and encoding the first segment. Usually 5–20 seconds on a quiet network.';
+    }
+  }else if(spin){
+    spin.classList.remove('visible');
+  }
+}
 function tearDownPlayer(){
+  setTopbarTranscodeBoot(false);
   if(currentPreviewId!=null){
     const pid=currentPreviewId;
     currentPreviewId=null;
@@ -1851,6 +1913,10 @@ function tearDownPlayer(){
     fetch('/api/preview/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:pid})}).catch(()=>{});
   }
   const video=document.getElementById('video-player');
+  if(video._clearHlsStreamListeners){
+    try{video._clearHlsStreamListeners();}catch(e){}
+    video._clearHlsStreamListeners=null;
+  }
   if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
   if(video._visHandler){document.removeEventListener('visibilitychange',video._visHandler); video._visHandler=null;}
   video._userPaused=false;
@@ -1892,17 +1958,31 @@ function attachStreamToVideo(video, info, status, channelName){
         liveMaxLatencyDuration: 21600,
         maxLiveSyncPlaybackRate: 1,
       } : {
-        liveDurationInfinity:true,
-        lowLatencyMode:false,
-        backBufferLength:30,
-        maxBufferLength:20,
-        liveSyncDurationCount:3,
+        // NAS transcode (Data saver): sliding-window HLS. Avoid the old combo of
+        // liveDurationInfinity + tiny buffers + tight liveSync — it chased the
+        // encoder tail and caused endless rebuffer + snap-ahead on good Wi‑Fi.
+        liveDurationInfinity: false,
+        backBufferLength: 120,
+        maxBufferLength: 50,
+        maxMaxBufferLength: 400,
+        maxBufferSize: 150 * 1024 * 1024,
+        maxBufferHole: 0.55,
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxLiveSyncPlaybackRate: 1,
+        liveSyncDuration: 12,
+        liveMaxLatencyDuration: 180,
       };
+      if(transcodeHls && !liveDvr){
+        setTopbarTranscodeBoot(true);
+        if(status) status.textContent='Preparing Data saver…';
+      }
       currentHls=new window.Hls(cfg);
       currentHls.loadSource(info.url);
       currentHls.attachMedia(video);
       currentHls.on(window.Hls.Events.MANIFEST_PARSED, ()=>{
         try{video.muted=false;}catch(e){}
+        if(transcodeHls && !liveDvr && status) status.textContent='Starting playback…';
         video.play().catch(()=>{status.textContent='Tap ▶ to start';});
       });
       currentHls.on(window.Hls.Events.ERROR, (_,data)=>{
@@ -1919,21 +1999,40 @@ function attachStreamToVideo(video, info, status, channelName){
       });
       // Stall recovery: don't fire during user seek or pause, and don't
       // fire while hls.js is still fetching segments for a scrub target.
-      video.addEventListener('waiting', ()=>{
+      if(video._clearHlsStreamListeners){
+        try{video._clearHlsStreamListeners();}catch(e){}
+        video._clearHlsStreamListeners=null;
+      }
+      const onHlsWait=()=>{
         if(video._stallTimer) return;
+        if(transcodeHls && !liveDvr) setTopbarTranscodeBoot(true,'buffer');
         video._stallTimer=setTimeout(()=>{
           video._stallTimer=null;
           if(!currentChannelForPlayer) return;
           if(video._userPaused || video.seeking) return;
+          if(transcodeHls && !liveDvr && currentHls){
+            try{currentHls.startLoad();}catch(e){}
+            if(status) status.textContent='Recovering stream…';
+            return;
+          }
           playChannel(currentProfile);
-        }, 15000);
-      });
-      video.addEventListener('seeking', ()=>{
+        }, transcodeHls && !liveDvr ? 12000 : 15000);
+      };
+      const onHlsSeeking=()=>{
         if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
-      });
-      video.addEventListener('playing', ()=>{
+      };
+      const onHlsPlaying=()=>{
         if(video._stallTimer){clearTimeout(video._stallTimer); video._stallTimer=null;}
-      });
+        if(transcodeHls && !liveDvr) setTopbarTranscodeBoot(false);
+      };
+      video.addEventListener('waiting', onHlsWait);
+      video.addEventListener('seeking', onHlsSeeking);
+      video.addEventListener('playing', onHlsPlaying);
+      video._clearHlsStreamListeners=()=>{
+        video.removeEventListener('waiting', onHlsWait);
+        video.removeEventListener('seeking', onHlsSeeking);
+        video.removeEventListener('playing', onHlsPlaying);
+      };
     }else if(nativeHls && liveDvr){
       try{video.muted=false;}catch(e){}
       video.src=info.url;
@@ -1954,6 +2053,7 @@ function attachStreamToVideo(video, info, status, channelName){
   video.onplaying=()=>{
     video._userPaused=false;
     try{video.muted=false;}catch(e){}
+    setTopbarTranscodeBoot(false);
     status.textContent='Playing'+(channelName?(' · '+channelName):'');
   };
   video.onpause=()=>{ video._userPaused=true; };
@@ -2022,7 +2122,7 @@ async function playChannel(forceProfile){
   const info = buildStreamUrl(playId, profile);
   status.textContent = profile==='original'
     ? 'Loading original stream…'
-    : 'Transcoding (Data saver)… (first load ~5s)';
+    : 'Preparing Data saver on your NAS…';
 
   attachStreamToVideo(video, info, status, playName);
   syncChannelPlayerShell(profile);

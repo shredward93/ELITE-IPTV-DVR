@@ -117,6 +117,20 @@ def run_job(job):
                 os.path.join(live_dir, "playlist.m3u8"),
             ]
 
+        # Bake AAC into the recording itself so completed-playback seeks do not
+        # trigger a long first-play remux/transcode step in web_server.py.
+        # Video remains stream-copied to keep record-time CPU cost low.
+        recording_out_args = [
+            "-map", "0:v:0?",
+            "-map", "0:a:0?",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ac", "2",
+            "-ar", "48000",
+            out,
+        ]
+
         # -t MUST go before -i so it limits input duration (applies to every
         # output). Placed as an output option it only caps the first output;
         # the HLS output then has no end, ffmpeg never exits, and communicate()
@@ -130,8 +144,7 @@ def run_job(job):
             "-timeout", "15000000",   # 15 s socket read timeout (microseconds)
             "-t", str(int(remaining)),
             "-i", stream_url,
-            "-c", "copy",
-            out,
+            *recording_out_args,
             *live_hls_args,
         ]
 

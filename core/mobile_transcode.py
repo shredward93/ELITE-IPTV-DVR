@@ -35,7 +35,7 @@ try:
 except ValueError:
     MAX_CONCURRENT_TRANSCODES = 3
 
-IDLE_TIMEOUT_SECS    = 25
+IDLE_TIMEOUT_SECS    = 120  # hls.js can go quiet while buffering; 25s evicted healthy sessions
 # How long we'll wait for the first segment to appear before giving up.
 # With temp_file flag, a segment only becomes visible after full close, so
 # worst case = startup + 1×segment_duration + encode_time ≈ 6-8s on a
@@ -340,14 +340,19 @@ class MobileTranscodeManager:
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
             "-timeout", "15000000",
-            "-fflags", "+discardcorrupt+nobuffer",
+            # nobuffer minimized input latency but starved the real-time encoder
+            # vs bursty IPTV TS — keep discardcorrupt only for steadier output.
+            "-fflags", "+discardcorrupt",
+            "-thread_queue_size", "512",
             "-i", stream_url,
         ]
 
         hls_args = [
             "-f", "hls",
-            "-hls_time", "4",
-            "-hls_list_size", "8",
+            "-hls_time", "5",
+            # Was 8 (~32s window): too small — hls.js + temp_file races caused
+            # 404s and endless buffering once the playhead lagged the window edge.
+            "-hls_list_size", "30",
             # temp_file: write to seg_*.ts.tmp and atomically rename on close,
             #   so clients never fetch a half-written segment (was causing
             #   decoder errors for larger HD segments on mobile browsers).

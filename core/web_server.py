@@ -1157,8 +1157,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
         mobile_transcode_manager.touch(channel_id, profile)
 
         seg_path = os.path.join(sess.dir, seg_name)
-        # Segment may not exist yet if client raced ahead — brief wait
-        for _ in range(20):
+        # Segment may not exist yet if client raced ahead — wait for temp_file rename
+        for _ in range(50):
             if os.path.exists(seg_path) and os.path.getsize(seg_path) > 0:
                 break
             time.sleep(0.1)

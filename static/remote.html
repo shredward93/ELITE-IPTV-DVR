@@ -1958,20 +1958,22 @@ function attachStreamToVideo(video, info, status, channelName){
         liveMaxLatencyDuration: 21600,
         maxLiveSyncPlaybackRate: 1,
       } : {
-        // NAS transcode (Data saver): sliding-window HLS. Avoid the old combo of
-        // liveDurationInfinity + tiny buffers + tight liveSync — it chased the
-        // encoder tail and caused endless rebuffer + snap-ahead on good Wi‑Fi.
+        // NAS transcode (Data saver): sliding-window HLS. Server now keeps a
+        // deeper manifest (30 segs) and avoids input nobuffer starvation — here
+        // we keep a deep forward buffer and stay lenient vs the live edge so
+        // hls.js does not thrash on brief segment delays.
         liveDurationInfinity: false,
-        backBufferLength: 120,
-        maxBufferLength: 50,
-        maxMaxBufferLength: 400,
-        maxBufferSize: 150 * 1024 * 1024,
-        maxBufferHole: 0.55,
-        enableWorker: true,
+        backBufferLength: 180,
+        maxBufferLength: 90,
+        maxMaxBufferLength: 600,
+        maxBufferSize: 220 * 1024 * 1024,
+        maxBufferHole: 1.0,
+        enableWorker: false,
         lowLatencyMode: false,
         maxLiveSyncPlaybackRate: 1,
-        liveSyncDuration: 12,
-        liveMaxLatencyDuration: 180,
+        liveSyncDuration: 10,
+        liveMaxLatencyDuration: 3600,
+        maxLoadingDelay: 12,
       };
       if(transcodeHls && !liveDvr){
         setTopbarTranscodeBoot(true);

@@ -23,6 +23,8 @@
 
 6. **Per-job backup channel** (future) — Today the backup is **global**: one failover channel used when the primary feed fails during a recording; new jobs copy whatever backup is set at schedule/start time, and **Set backup** replaces the previous global value. Future work: **assign backup only to a specific queued (or active) recording job** — e.g. choose job index in the web UI, extend `/api` to patch `RecordingJob.backup_*` for that job without changing the global default, and mirror in headless + desktop UIs.
 
+7. **Session timeshift file** (future) — Keep the current **rolling Live DVR** HLS buffer as-is (short rewind, live-ish behavior). For long pauses (e.g. step away mid–sporting event), users can already use an **in-progress live recording** from the Recordings section (HLS with pause/rewind). Future enhancement: optional **background record to a single `.ts` / `.mkv` file for the watch session** — one continuous container written alongside (or instead of) the tight rolling window, so the server retains a seekable tail long enough for extended pause/chase-play without relying on the provider’s live edge alone. Design TBD (disk caps, UI toggle, API, cleanup when session ends).
+
 ---
 
 ## Recommended Module Structure

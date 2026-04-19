@@ -32,6 +32,20 @@ from core.mobile_transcode import manager as mobile_transcode_manager
 from core.recorder import job_duration_secs
 
 
+def _json_iso_utc(dt: datetime.datetime) -> str:
+    """
+    Serialize datetimes for JSON / browsers as ISO-8601 UTC with a Z suffix.
+
+    Naive datetimes follow the same rules as datetime.timestamp(): they are
+    interpreted in the host's local timezone (Docker often uses UTC). Without
+    an explicit offset, JavaScript treats 'YYYY-MM-DDTHH:mm:ss' as *local* time,
+    which shifts queued recording labels for users outside the server TZ.
+    """
+    ts = dt.timestamp()
+    utc = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
+
 class _RecordingHlsSession:
     """One progressive remux job: filename → outdir, with a running ffmpeg."""
     __slots__ = (
@@ -1166,7 +1180,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 result.append({
                     "filename":    os.path.basename(path),
                     "size_bytes":  stat.st_size,
-                    "recorded_at": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "recorded_at": _json_iso_utc(datetime.datetime.fromtimestamp(stat.st_mtime)),
                 })
             except OSError:
                 pass
@@ -1438,13 +1452,13 @@ class RemoteHandler(BaseHTTPRequestHandler):
                         elapsed = int((now - job.actual_start).total_seconds())
                         entry["elapsed_secs"]   = elapsed
                         entry["remaining_secs"] = max(0, job_duration_secs(job) - elapsed)
-                        entry["started_at"]     = job.actual_start.isoformat()
+                        entry["started_at"]     = _json_iso_utc(job.actual_start)
                     entry["duration_secs"]    = job_duration_secs(job)
                     if getattr(job, "start_time", None):
-                        entry["scheduled_start"] = job.start_time.isoformat()
-                        entry["scheduled_end"]   = (
+                        entry["scheduled_start"] = _json_iso_utc(job.start_time)
+                        entry["scheduled_end"]   = _json_iso_utc(
                             job.start_time + datetime.timedelta(seconds=job_duration_secs(job))
-                        ).isoformat()
+                        )
                     if job.output_file:
                         fn = os.path.basename(job.output_file)
                         entry["output_file"] = fn

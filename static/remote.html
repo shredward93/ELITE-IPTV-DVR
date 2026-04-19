@@ -1741,7 +1741,7 @@ function confirmSchedule(){
     if(!mStart || !mEnd){toast('Pick start and end times');return}
     if(mEnd<=mStart){toast('End must be after start');return}
     dur=Math.round((mEnd-mStart)/60000);
-    time=fmtPill(mStart);
+    time=mStart.getTime();
   }
   const body={channel_id:selId,channel_name:selName,start_time:time,duration_mins:dur};
   if(customName) body.custom_name=customName;

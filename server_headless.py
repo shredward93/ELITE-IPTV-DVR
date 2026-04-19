@@ -293,10 +293,9 @@ class HeadlessServer:
             if action.get("start_time") == "NOW":
                 start_time = now
             else:
-                start_time = datetime.datetime.strptime(action["start_time"].strip(), "%I:%M %p")
-                start_time = start_time.replace(year=now.year, month=now.month, day=now.day)
+                start_time = datetime.datetime.fromtimestamp(int(action["start_time"]) / 1000)
                 if start_time < now:
-                    start_time += datetime.timedelta(days=1)
+                    start_time = now
 
             job = RecordingJob(
                 action["channel_name"],

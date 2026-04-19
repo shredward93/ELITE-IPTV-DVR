@@ -242,10 +242,6 @@ input:focus{border-color:#2563eb}
   <div id="sel-card" style="display:none">
     <div class="sel-card">
       <div class="sel-name" id="sel-name"></div>
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <div class="sel-name" id="sel-name" style="margin-bottom:0; flex-grow:1;"></div>
-        <div onclick="closeChannel()" style="cursor:pointer; padding:4px; color:#e5e7eb; background-color:#dc2626; border-radius:50%; font-size:20px; line-height:1; font-weight:bold; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" title="Close">✕</div>
-      </div>
       <div class="sel-btns">
         <button class="btn btn-red btn-sm" onclick="openModal(true)">Record Now</button>
         <button class="btn btn-blue btn-sm" onclick="openModal(false)">Schedule</button>
@@ -380,12 +376,6 @@ function selectChannel(id,name){
   updateFavBtn();
   fetch('/api/epg?channel_id='+id).then(r=>r.json()).then(d=>renderEpg(d.listings))
     .catch(()=>{document.getElementById('epg-panel').innerHTML='<div class="empty">No guide data</div>';});
-}
-
-function closeChannel(){
-  selId=null; selName=null;
-  document.getElementById('sel-card').style.display='none';
-  document.getElementById('search-input').value='';
 }
 
 // ── EPG ───────────────────────────────────────────────────────────────────────

@@ -1866,12 +1866,13 @@ function attachStreamToVideo(video, info, status, channelName){
   const nativeHls = video.canPlayType('application/vnd.apple.mpegurl');
   const liveDvr = info.liveDvr === true;
   if(info.type==='hls'){
-    const useNativeHls = nativeHls && !liveDvr;
-    if(useNativeHls){
-      try{video.muted=false;}catch(e){}
-      video.src=info.url;
-      video.play().catch(()=>{status.textContent='Tap ▶ to start';});
-    }else if(window.Hls && window.Hls.isSupported()){
+    // Transcoded HLS is MPEG-TS segments. Chromium often reports a positive
+    // canPlayType() for application/vnd.apple.mpegurl ("maybe") but native
+    // playback then shows a black picture — prefer MSE + hls.js whenever
+    // available. Safari without MSE still uses native below.
+    const transcodeHls = typeof info.url === 'string' && info.url.indexOf('/api/stream/mobile') !== -1;
+    const canHlsJs = !!(window.Hls && window.Hls.isSupported());
+    if(canHlsJs && (liveDvr || transcodeHls)){
       const cfg = liveDvr ? {
         // DVR window: keep everything back-buffered so the user can scrub
         // back through the whole session. Finite duration is required or
@@ -1937,6 +1938,10 @@ function attachStreamToVideo(video, info, status, channelName){
       try{video.muted=false;}catch(e){}
       video.src=info.url;
       video.play().catch(()=>{status.textContent='Tap to play';});
+    }else if(nativeHls && transcodeHls){
+      try{video.muted=false;}catch(e){}
+      video.src=info.url;
+      video.play().catch(()=>{status.textContent='Tap ▶ to start';});
     }else{
       status.textContent='HLS not supported in this browser';
     }

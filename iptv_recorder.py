@@ -242,6 +242,10 @@ input:focus{border-color:#2563eb}
   <div id="sel-card" style="display:none">
     <div class="sel-card">
       <div class="sel-name" id="sel-name"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div class="sel-name" id="sel-name" style="margin-bottom:0"></div>
+        <div onclick="closeChannel()" style="cursor:pointer; padding:4px; color:#6b7280; font-size:24px; line-height:1; font-weight:bold;" title="Close">✕</div>
+      </div>
       <div class="sel-btns">
         <button class="btn btn-red btn-sm" onclick="openModal(true)">Record Now</button>
         <button class="btn btn-blue btn-sm" onclick="openModal(false)">Schedule</button>
@@ -376,6 +380,12 @@ function selectChannel(id,name){
   updateFavBtn();
   fetch('/api/epg?channel_id='+id).then(r=>r.json()).then(d=>renderEpg(d.listings))
     .catch(()=>{document.getElementById('epg-panel').innerHTML='<div class="empty">No guide data</div>';});
+}
+
+function closeChannel(){
+  selId=null; selName=null;
+  document.getElementById('sel-card').style.display='none';
+  document.getElementById('search-input').value='';
 }
 
 // ── EPG ───────────────────────────────────────────────────────────────────────

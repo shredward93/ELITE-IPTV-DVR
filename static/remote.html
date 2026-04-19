@@ -186,11 +186,22 @@
   }
   .selected-header{
     padding:14px 16px;
-    display:flex; align-items:center; gap:12px;
+    display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
     border-bottom:1px solid var(--rule);
     background:var(--surface-2);
   }
-  .selected-bar{width:3px; height:36px; background:var(--signal); border-radius:2px; flex-shrink:0}
+  .selected-header-main{display:flex; align-items:flex-start; gap:12px; flex:1; min-width:0}
+  .selected-bar{width:3px; height:36px; background:var(--signal); border-radius:2px; flex-shrink:0; margin-top:2px}
+  .sel-close-btn{
+    flex-shrink:0; width:36px; height:36px; margin-top:2px;
+    border-radius:10px; border:1px solid var(--rule);
+    background:var(--ink-soft); color:var(--paper-muted);
+    font-size:15px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .15s, color .15s, background .12s;
+  }
+  .sel-close-btn:hover{border-color:var(--signal); color:var(--signal); background:var(--surface)}
+  .sel-close-btn:active{transform:scale(.96)}
   .selected-label{
     font-family:'JetBrains Mono',monospace;
     font-size:9px; letter-spacing:0.18em;
@@ -1006,11 +1017,14 @@
 
   <div id="sel-card" class="selected-dock" style="display:none">
     <div class="selected-header">
-      <div class="selected-bar"></div>
-      <div style="flex:1;min-width:0">
-        <div class="selected-label">Selected Channel</div>
-        <div class="sel-name" id="sel-name"></div>
+      <div class="selected-header-main">
+        <div class="selected-bar"></div>
+        <div style="flex:1;min-width:0">
+          <div class="selected-label">Selected Channel</div>
+          <div class="sel-name" id="sel-name"></div>
+        </div>
       </div>
+      <button type="button" class="sel-close-btn" onclick="closeSelectedChannelDock()" title="Close" aria-label="Close selected channel">✕</button>
     </div>
     <div class="selected-body">
       <div class="sel-btns">
@@ -1138,7 +1152,7 @@ function renderSavedCategories(){
     </div>`).join('');
 }
 function selectSavedCategory(id,name){
-  switchTab('guide');
+  activateTab('guide');
   selectGuideCategory(id);
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1158,12 +1172,16 @@ function toast(msg){
 }
 
 /* ═══ TABS ═══ */
-function switchTab(name){
+function activateTab(name){
   activeTab=name;
   logOpen=(name==='log');
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active', p.id==='pane-'+name));
   if(name==='log')refreshLog();
+}
+function switchTab(name){
+  closeSelectedChannelDock();
+  activateTab(name);
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 
@@ -1546,6 +1564,12 @@ function renderResults(channels){
 }
 
 /* ═══ CHANNEL SELECTION ═══ */
+function closeSelectedChannelDock(){
+  closeMoreMenu();
+  selId=null;selName=null;
+  const card=document.getElementById('sel-card');
+  if(card)card.style.display='none';
+}
 function selectChannel(id,name){
   selId=id;selName=name;
   document.getElementById('search-input').value=name;
@@ -1752,7 +1776,7 @@ function confirmSchedule(){
     toast(d.message || (isRecordNow?'Recording started':'Scheduled'));
     refreshStatus();
     refreshRecordings(true);
-    switchTab('recs');
+    activateTab('recs');
   }).catch(()=>toast('Error'));
 }
 
@@ -1779,10 +1803,11 @@ function setBackup(){
   }).then(r=>r.json()).then(d=>{refreshStatus();toast(d.message||'Backup set');}).catch(()=>toast('Error'));
 }
 function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refreshStatus();toast('Backup cleared');});}
-function stopJob(i){
-  if(!confirm('Stop this recording?'))return;
+function stopJob(i, isQueued){
+  const msg=isQueued?'Cancel this scheduled recording?':'Stop this recording?';
+  if(!confirm(msg))return;
   fetch('/api/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
-    .then(()=>{refreshStatus();refreshRecordings(true);toast('Stop requested');});
+    .then(()=>{refreshStatus();refreshRecordings(true);toast(isQueued?'Cancel requested':'Stop requested');});
 }
 function stopJobFromBanner(){
   const i=parseInt(document.getElementById('rec-banner-stop').dataset.index||'0');
@@ -2635,7 +2660,7 @@ function renderActiveRec(r, i){
       <div class="rec-actions">
         ${hasLive?`<button class="btn primary btn-sm" onclick="playRecordingInline('hls','${esc(r.live_hls_url)}','${id}',{isLive:true,vlcUrl:'${esc(absoluteUrl(r.live_hls_url))}',vlcName:'${esc(r.channel_name||'live')}'})">▶  Watch Live</button>`:''}
         ${vlcLive?`<a class="btn ghost btn-sm" href="${esc(vlcLive)}">Open in VLC</a>`:''}
-        ${r.stoppable!==false?`<button class="btn danger btn-sm" onclick="stopJob(${r.index})">■  Stop</button>`:''}
+        ${r.stoppable!==false?`<button class="btn danger btn-sm" onclick="stopJob(${r.index},${isWaiting?'true':'false'})">${isWaiting?'Cancel':'■  Stop'}</button>`:''}
       </div>
     </div>`;
 }

@@ -243,8 +243,8 @@ input:focus{border-color:#2563eb}
     <div class="sel-card">
       <div class="sel-name" id="sel-name"></div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <div class="sel-name" id="sel-name" style="margin-bottom:0"></div>
-        <div onclick="closeChannel()" style="cursor:pointer; padding:4px; color:#6b7280; font-size:24px; line-height:1; font-weight:bold;" title="Close">✕</div>
+        <div class="sel-name" id="sel-name" style="margin-bottom:0; flex-grow:1;"></div>
+        <div onclick="closeChannel()" style="cursor:pointer; padding:4px; color:#e5e7eb; background-color:#dc2626; border-radius:50%; font-size:20px; line-height:1; font-weight:bold; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" title="Close">✕</div>
       </div>
       <div class="sel-btns">
         <button class="btn btn-red btn-sm" onclick="openModal(true)">Record Now</button>

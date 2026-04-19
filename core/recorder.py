@@ -95,8 +95,18 @@ def run_job(job):
             live_dir = os.path.join(config.DVR_BUFFER_DIR, f"live_{job.id}")
             os.makedirs(live_dir, exist_ok=True)
             job.live_dir = live_dir
+            # Parallel HLS for "watch while recording" in the web UI. Browsers
+            # decode AAC in MSE; AC-3/MP2 from a straight -c copy mux are often
+            # silent. Keep video copy; re-encode audio to AAC (same idea as
+            # live_preview.py and completed-recording remux in web_server).
             live_hls_args = [
-                "-c", "copy",
+                "-map", "0:v:0",
+                "-map", "0:a:0?",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ac", "2",
+                "-ar", "48000",
                 "-f", "hls",
                 "-hls_time", "4",
                 "-hls_list_size", "0",

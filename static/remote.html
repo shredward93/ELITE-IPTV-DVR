@@ -2529,26 +2529,23 @@ function playRecordingInline(kind, src, cardId, opts){
   if(_tBar) _tBar.classList.remove('visible');
 
   const nativeHls=video.canPlayType('application/vnd.apple.mpegurl');
-  const isCompletedRec = typeof src==='string' && src.indexOf('/api/recordings/hls/')===0;
+  const isCompletedRemux = typeof src==='string' && src.indexOf('/api/recordings/hls/')===0;
+  const liveRecordingHls = !!(opts && opts.isLive) || (typeof src==='string' && src.indexOf('/recordings/live/')!==-1);
 
   spinner.classList.add('visible');
 
   if(kind==='hls'){
-    if(nativeHls){
-      video.src=src;
-      // For native HLS (Safari/iOS), force start at 0 on completed recordings
-      // so we don't land at the encoder's growing tail.
-      if(isCompletedRec){
-        video.addEventListener('loadedmetadata', ()=>{ try{ video.currentTime=0; }catch(e){} }, {once:true});
-      }
-    } else if(window.Hls && window.Hls.isSupported()){
-      // CRITICAL FIX: the previous config used liveDurationInfinity+backBufferLength=Infinity
-      // which forced video.duration → Infinity and broke scrubbing.
-      // Completed recordings are VOD even while remux is in progress — use the default
-      // (non-live) config so seeking, timecode, and duration all work.
-      const cfg = isCompletedRec
+    const hlsJsOk = !!(window.Hls && window.Hls.isSupported());
+    // Prefer MSE+hls.js for in-progress recording HLS (MPEG-TS + browser codecs),
+    // same rationale as Live DVR / Data saver — native often breaks A/V or scrub.
+    const useHlsJs = hlsJsOk && (isCompletedRemux || liveRecordingHls || !nativeHls);
+    if(useHlsJs){
+      // Completed remux: true VOD. In-progress /recordings/live/…: growing
+      // EVENT playlist — avoid liveSync* defaults that pin to the sliding edge
+      // (pause/resume jumped back to "live"). Allow very large latency so the
+      // playhead stays where the user left it while the playlist grows.
+      const cfg = isCompletedRemux
         ? {
-            // VOD config. Let hls.js manage its own buffer.
             maxBufferLength: 30,
             maxMaxBufferLength: 300,
             maxBufferSize: 120 * 1024 * 1024,
@@ -2557,23 +2554,23 @@ function playRecordingInline(kind, src, cardId, opts){
             lowLatencyMode: false,
           }
         : {
-            // Live (in-progress recording) config. Finite duration so the
-            // scrub bar stays usable; deep back-buffer so the user can seek
-            // back through the whole recording while it continues growing.
             liveDurationInfinity: false,
             backBufferLength: 21600,
-            maxBufferLength: 60,
+            maxBufferLength: 90,
             maxMaxBufferLength: 600,
             maxBufferSize: 200 * 1024 * 1024,
             enableWorker: true,
             lowLatencyMode: false,
-            liveSyncDuration: 20,
-            liveMaxLatencyDuration: 21600,
             maxLiveSyncPlaybackRate: 1,
+            liveMaxLatencyDuration: 48 * 3600,
+            liveSyncDuration: 3,
           };
       const h = new window.Hls(cfg);
       h.loadSource(src); h.attachMedia(video);
-      h.on(window.Hls.Events.MANIFEST_PARSED, ()=>{ video.play().catch(()=>{}); });
+      h.on(window.Hls.Events.MANIFEST_PARSED, ()=>{
+        try{video.muted=false;}catch(e){}
+        video.play().catch(()=>{});
+      });
       h.on(window.Hls.Events.LEVEL_LOADED, (_, data)=>{
         // Prefer the playlist-reported duration once we have it.
         if(data && data.details && isFinite(data.details.totalduration) && data.details.totalduration>0){
@@ -2591,6 +2588,11 @@ function playRecordingInline(kind, src, cardId, opts){
         }
       });
       video._hls=h;
+    } else if(nativeHls){
+      video.src=src;
+      if(isCompletedRemux){
+        video.addEventListener('loadedmetadata', ()=>{ try{ video.currentTime=0; }catch(e){} }, {once:true});
+      }
     } else {
       video.src=src;
     }

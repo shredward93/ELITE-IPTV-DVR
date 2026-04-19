@@ -220,6 +220,12 @@
     margin-bottom:14px;
   }
   .sel-btns .btn.primary, .sel-btns .btn.danger{grid-column:span 2}
+  .sel-extra-row{
+    grid-column:1 / -1;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px;
+  }
+  .sel-fav-btn .sel-fav-ico{font-size:14px; margin-right:2px}
+  .sel-fav-btn.ok-state{border-color:var(--ok); color:var(--ok)}
 
   /* BUTTONS */
   .btn{
@@ -477,30 +483,6 @@
   .rec-inline-player:-webkit-full-screen video{
     max-height:100vh; height:100%; object-fit:contain;
   }
-
-  /* MORE MENU (channel card) */
-  .more-wrap{position:relative}
-  .more-menu{
-    position:absolute; top:calc(100% + 6px); right:0;
-    background:var(--surface-2); border:1px solid var(--rule);
-    border-radius:12px; padding:6px; z-index:50;
-    min-width:170px; box-shadow:var(--shadow-lg);
-    display:none; flex-direction:column; gap:2px;
-    animation:more-in .14s ease-out both;
-  }
-  .more-menu.open{display:flex}
-  @keyframes more-in{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
-  .more-item{
-    display:flex; align-items:center; gap:10px;
-    padding:10px 12px; border-radius:8px;
-    font-family:'Manrope',sans-serif; font-size:13px; font-weight:500;
-    color:var(--paper); cursor:pointer; border:none; background:none;
-    text-align:left; width:100%; transition:background .12s;
-  }
-  .more-item:hover{background:var(--surface-3)}
-  .more-item .more-icon{font-size:15px; flex-shrink:0; width:20px; text-align:center}
-  .more-item.ok-state{color:var(--ok)}
-  .more-item.danger-state{color:var(--live)}
 
   /* GUIDE BREADCRUMB */
   .guide-breadcrumb{
@@ -1031,16 +1013,11 @@
         <button class="btn primary" onclick="playChannel()">▶  Watch Live</button>
         <button class="btn danger" onclick="openModal(true)">●  Record Now</button>
         <button class="btn ghost" onclick="openModal(false)">⧖  Schedule</button>
-        <div class="more-wrap">
-          <button class="btn ghost" id="more-btn" onclick="toggleMoreMenu(event)">⋯  More</button>
-          <div class="more-menu" id="more-menu">
-            <button class="more-item" id="more-fav-btn" onclick="toggleFav();closeMoreMenu()">
-              <span class="more-icon" id="more-fav-icon">☆</span><span id="more-fav-label">Save Channel</span>
-            </button>
-            <button class="more-item" onclick="setBackup();closeMoreMenu()">
-              <span class="more-icon">⤓</span>Set as Backup
-            </button>
-          </div>
+        <div class="sel-extra-row">
+          <button type="button" class="btn ghost sel-fav-btn" id="sel-fav-btn" onclick="toggleFav()">
+            <span class="sel-fav-ico" id="sel-fav-icon">☆</span><span id="sel-fav-label">Save channel</span>
+          </button>
+          <button type="button" class="btn ghost" onclick="setBackup()"><span class="sel-fav-ico">⤓</span> Set backup</button>
         </div>
       </div>
       <div id="epg-panel"><div class="empty">Loading guide…</div></div>
@@ -1126,6 +1103,13 @@
 <script>
 /* ═══ STATE ═══ */
 let selId=null,selName=null,allFavs=[],searchTimer=null,isRecordNow=false;
+let currentChannelForPlayer=null; // last live channel — watch controls use this if selection dock is closed
+let scheduleChannelId=null,scheduleChannelName=null; // channel locked when record modal opens
+function getSelectedChannelContext(){
+  if(selId) return {id:selId, name:selName};
+  if(currentChannelForPlayer && currentChannelForPlayer.id) return {id:currentChannelForPlayer.id, name:currentChannelForPlayer.name};
+  return null;
+}
 let activeTab='guide';
 let guideCategories=[],guideBundle=null,guideSelectedCategoryId='',guideSelectedChannelId='',guideLoading=false,guideError='';
 let logOpen=false;
@@ -1510,36 +1494,28 @@ function selectFav(id,name){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function updateFavBtn(){
-  if(!selId)return;
-  const saved=allFavs.some(f=>f.id===selId);
-  // Update ⋯ More menu items to reflect saved state
-  const icon=document.getElementById('more-fav-icon');
-  const label=document.getElementById('more-fav-label');
-  const moreItem=document.getElementById('more-fav-btn');
+  const ctx=getSelectedChannelContext();
+  const icon=document.getElementById('sel-fav-icon');
+  const label=document.getElementById('sel-fav-label');
+  const btn=document.getElementById('sel-fav-btn');
+  if(!ctx){
+    if(icon) icon.textContent='☆';
+    if(label) label.textContent='Save channel';
+    if(btn){btn.className='btn ghost sel-fav-btn';btn.disabled=true;}
+    return;
+  }
+  if(btn) btn.disabled=false;
+  const saved=allFavs.some(f=>String(f.id)===String(ctx.id));
   if(icon) icon.textContent=saved?'★':'☆';
-  if(label) label.textContent=saved?'Remove from Saved':'Save Channel';
-  if(moreItem) moreItem.className='more-item'+(saved?' ok-state':'');
+  if(label) label.textContent=saved?'Remove from saved':'Save channel';
+  if(btn) btn.className='btn ghost sel-fav-btn'+(saved?' ok-state':'');
 }
-let _moreMenuOpen=false;
-function toggleMoreMenu(e){
-  e.stopPropagation();
-  const menu=document.getElementById('more-menu');
-  _moreMenuOpen=!_moreMenuOpen;
-  menu.classList.toggle('open',_moreMenuOpen);
-}
-function closeMoreMenu(){
-  _moreMenuOpen=false;
-  const menu=document.getElementById('more-menu');
-  if(menu)menu.classList.remove('open');
-}
-document.addEventListener('click',e=>{
-  if(_moreMenuOpen&&!e.target.closest('.more-wrap'))closeMoreMenu();
-});
 function toggleFav(){
-  if(!selId)return;
-  const saved=allFavs.some(f=>f.id===selId);
+  const ctx=getSelectedChannelContext();
+  if(!ctx)return;
+  const saved=allFavs.some(f=>String(f.id)===String(ctx.id));
   const url=saved?'/api/favorites/remove':'/api/favorites/add';
-  const body=saved?{name:selName}:{name:selName,id:selId};
+  const body=saved?{name:ctx.name}:{name:ctx.name,id:ctx.id};
   fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(()=>{refreshFavs();toast(saved?'Removed from saved':'Saved');});
 }
@@ -1565,10 +1541,10 @@ function renderResults(channels){
 
 /* ═══ CHANNEL SELECTION ═══ */
 function closeSelectedChannelDock(){
-  closeMoreMenu();
   selId=null;selName=null;
   const card=document.getElementById('sel-card');
   if(card)card.style.display='none';
+  updateFavBtn();
 }
 function selectChannel(id,name){
   selId=id;selName=name;
@@ -1739,9 +1715,12 @@ function renderPickerSelection(){
 
 /* ═══ MODAL ═══ */
 function openModal(now=false){
-  if(!selId){toast('Select a channel first');return}
+  const ctx=getSelectedChannelContext();
+  if(!ctx){toast('Select a channel first');return}
+  scheduleChannelId=ctx.id;
+  scheduleChannelName=ctx.name;
   isRecordNow=now;
-  document.getElementById('modal-title').textContent=now?'Record Now · '+selName:'Schedule · '+selName;
+  document.getElementById('modal-title').textContent=now?'Record Now · '+ctx.name:'Schedule · '+ctx.name;
   const timeRow=document.getElementById('field-time');
   const durMeta=document.getElementById('m-duration-meta');
   timeRow.style.display=now?'none':'flex';
@@ -1757,7 +1736,12 @@ function openModal(now=false){
   }
   document.getElementById('overlay').classList.add('open');
 }
-function closeModal(){closePickers();document.getElementById('overlay').classList.remove('open')}
+function closeModal(){
+  closePickers();
+  document.getElementById('overlay').classList.remove('open');
+  scheduleChannelId=null;
+  scheduleChannelName=null;
+}
 function confirmSchedule(){
   const customName=document.getElementById('m-name').value.trim();
   let time='NOW', dur=60;
@@ -1767,7 +1751,8 @@ function confirmSchedule(){
     dur=Math.round((mEnd-mStart)/60000);
     time=mStart.getTime();
   }
-  const body={channel_id:selId,channel_name:selName,start_time:time,duration_mins:dur};
+  if(!scheduleChannelId){toast('Select a channel first');return;}
+  const body={channel_id:scheduleChannelId,channel_name:scheduleChannelName,start_time:time,duration_mins:dur};
   if(customName) body.custom_name=customName;
   fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)
@@ -1792,14 +1777,14 @@ document.getElementById('overlay').addEventListener('click', e=>{
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     closeModal();
-    closeMoreMenu();
     closePickers();
   }
 });
 function setBackup(){
-  if(!selId)return;
+  const ctx=getSelectedChannelContext();
+  if(!ctx){toast('Select a channel first');return;}
   fetch('/api/backup/set',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:selId,name:selName})
+    body:JSON.stringify({id:ctx.id,name:ctx.name})
   }).then(r=>r.json()).then(d=>{refreshStatus();toast(d.message||'Backup set');}).catch(()=>toast('Error'));
 }
 function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refreshStatus();toast('Backup cleared');});}
@@ -1829,7 +1814,6 @@ let currentHls=null;
 let currentProfile=null;       // 'live_dvr' | 'original' | 'data_saver'
 let currentPreviewId=null;     // Live DVR session id for /api/preview/stop
 let currentLiveHlsUrl=null;    // for VLC when mode is Live DVR
-let currentChannelForPlayer=null;
 
 function resolveProfile(choice){
   if(choice==='auto' || !choice) return 'live_dvr';
@@ -1983,7 +1967,10 @@ function attachStreamToVideo(video, info, status, channelName){
   document.addEventListener('visibilitychange', video._visHandler);
 }
 async function playChannel(forceProfile){
-  if(!selId){toast('Select a channel first');return;}
+  const ctx=getSelectedChannelContext();
+  if(!ctx){toast('Select a channel first');return;}
+  const playId=ctx.id;
+  const playName=ctx.name||'';
   const video=document.getElementById('video-player');
   const topbarPlayer=document.getElementById('topbar-player');
   const status=document.getElementById('player-status');
@@ -1991,7 +1978,7 @@ async function playChannel(forceProfile){
   const choice   = forceProfile || savedWatchMode();
   const profile  = resolveProfile(choice);
   currentProfile = profile;
-  currentChannelForPlayer = {id:selId, name:selName};
+  currentChannelForPlayer = {id:String(playId), name:playName};
   setActiveWatchModeBtn(choice);
 
   // Re-trigger slide-in animation each time player opens
@@ -2006,7 +1993,7 @@ async function playChannel(forceProfile){
   if(profile==='live_dvr'){
     status.textContent='Starting Live DVR…';
     try{
-      const res=await fetch('/api/preview/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:selId})});
+      const res=await fetch('/api/preview/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:playId})});
       const d=await res.json();
       if(!d.ok){
         status.textContent=d.error || 'Live DVR failed';
@@ -2015,8 +2002,8 @@ async function playChannel(forceProfile){
       }
       currentPreviewId=d.preview_id;
       currentLiveHlsUrl=d.live_hls_url;
-      status.textContent='Playing · '+selName;
-      attachStreamToVideo(video,{url:d.live_hls_url,type:'hls',liveDvr:true},status,selName);
+      status.textContent='Playing · '+playName;
+      attachStreamToVideo(video,{url:d.live_hls_url,type:'hls',liveDvr:true},status,playName);
       syncChannelPlayerShell(profile);
     }catch(e){
       status.textContent='Could not start Live DVR';
@@ -2027,12 +2014,12 @@ async function playChannel(forceProfile){
 
   currentPreviewId=null;
   currentLiveHlsUrl=null;
-  const info = buildStreamUrl(selId, profile);
+  const info = buildStreamUrl(playId, profile);
   status.textContent = profile==='original'
     ? 'Loading original stream…'
     : 'Transcoding (Data saver)… (first load ~5s)';
 
-  attachStreamToVideo(video, info, status, selName);
+  attachStreamToVideo(video, info, status, playName);
   syncChannelPlayerShell(profile);
 }
 function stopPlayer(){
@@ -2045,6 +2032,7 @@ function stopPlayer(){
   currentPreviewId=null;
   currentLiveHlsUrl=null;
   currentChannelForPlayer=null;
+  updateFavBtn();
 }
 function watchLiveInVLC(){
   if(!currentChannelForPlayer) return;

@@ -21,6 +21,8 @@
    by side — a simple dual-screen layout with independent audio selection.
    Extend later to more panes if it proves useful.
 
+6. **Per-job backup channel** (future) — Today the backup is **global**: one failover channel used when the primary feed fails during a recording; new jobs copy whatever backup is set at schedule/start time, and **Set backup** replaces the previous global value. Future work: **assign backup only to a specific queued (or active) recording job** — e.g. choose job index in the web UI, extend `/api` to patch `RecordingJob.backup_*` for that job without changing the global default, and mirror in headless + desktop UIs.
+
 ---
 
 ## Recommended Module Structure

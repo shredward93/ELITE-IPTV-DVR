@@ -47,6 +47,8 @@ class HeadlessServer:
         self._log_entries: list[str] = []
         self._channels_loaded = False
         self._running = True
+        self.backup_channel_id: str | None = None
+        self.backup_channel_name: str | None = None
 
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
@@ -140,11 +142,10 @@ class HeadlessServer:
                                    "status_text": f"Starts in {str(datetime.timedelta(seconds=secs))}",
                                    "stoppable": True})
 
-        backup_info = ""
         return {
             "recordings": recordings,
             "status": f"Ready — {len(self.all_channel_names):,} channels" if self._channels_loaded else "Loading channels…",
-            "backup_name": backup_info,
+            "backup_name": self.backup_channel_name or "",
         }
 
     def _web_get_channels(self, q: str) -> list[dict]:
@@ -282,8 +283,17 @@ class HeadlessServer:
                     save_favorites(config.FAVORITES_FILE, favorites)
                     self._log(f"[Remote] Removed channel: '{name}'")
             elif action["type"] == "backup_set":
-                self._log(f"[Remote] Set backup channel: '{action.get('name')}'")
+                bid = action.get("id")
+                bname = action.get("name")
+                if bid and bname:
+                    self.backup_channel_id = str(bid)
+                    self.backup_channel_name = str(bname)
+                    self._log(f"[Remote] Set backup channel: '{self.backup_channel_name}'")
+                else:
+                    self._log("[Remote] backup_set ignored (missing id or name)")
             elif action["type"] == "backup_clear":
+                self.backup_channel_id = None
+                self.backup_channel_name = None
                 self._log("[Remote] Cleared backup channel")
 
     def _web_schedule(self, action: dict):
@@ -304,6 +314,8 @@ class HeadlessServer:
                 int(action["duration_mins"]),
                 self.output_dir,
             )
+            job.backup_channel_id = self.backup_channel_id
+            job.backup_channel_name = self.backup_channel_name
             self.recording_jobs.append(job)
 
             if action.get("start_time") == "NOW":

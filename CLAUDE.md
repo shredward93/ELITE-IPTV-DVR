@@ -2,7 +2,7 @@
 
 ## Project
 Two-part system: Python PC server brain + Android TV client.
-See IMPLEMENTATION.md for full architecture.
+See `docs/ROADMAP.md` and `docs/ARCHITECTURE_CODEMAP.md` for full architecture.
 
 ## Models
 - Default: Sonnet (coding, edits, API design)
@@ -10,10 +10,15 @@ See IMPLEMENTATION.md for full architecture.
 
 ## Repo layout
 ```
-core/          PC backend modules — edit here for server/API/DVR work
-ui/            PC tkinter frontend — edit here for desktop UI work
-android/       Android TV app (Kotlin) — not yet created
-IMPLEMENTATION.md  Full feature plan — read this first on any new task
+core/             PC backend modules — server/API/DVR work
+ui/               PC tkinter desktop frontend
+static/           Web frontend (mobile webapp)
+docker/           Alternate Docker setup (entrypoint.sh + multi-stage)
+Dockerfile        Production NAS image (used by REBUILD)
+docs/             All project docs, roadmap, handoff, deployment notes
+assets/           Branding + screenshots (not loaded at runtime)
+NAS App Update/   Windows .bat shortcuts for git push / NAS sync
+android/          Android TV app (Kotlin) — not yet created on this branch
 ```
 
 ## Skill usage
@@ -28,8 +33,8 @@ IMPLEMENTATION.md  Full feature plan — read this first on any new task
 | Need to know what to work on next | `taches-cc-resources:whats-next` |
 
 ## Rules
-- Read IMPLEMENTATION.md before starting any new feature — it defines the API contract between PC and Android.
-- PC modules live in `core/`. Never put business logic in `ui/`.
+- Read `docs/ROADMAP.md` and `docs/ARCHITECTURE_CODEMAP.md` before starting any new feature — they define the API contract between PC and clients.
+- PC modules live in `core/`. Never put business logic in `ui/` or `static/`.
 - Android TV is a thin client — no FFmpeg, no file management. All heavy work stays on PC.
 - DVR buffer segments live in a separate folder from completed scheduled recordings.
 - Both DVR caps (hours AND GB) must always be enforced together.

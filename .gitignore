@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -7,15 +8,40 @@ __pycache__/
 dist/
 build/
 *.spec
+
+# Credentials & user data
 credentials.json
 favorites.json
 settings.json
+scheduled_recordings.json
+.env
 !.vscode/settings.json
+
+# IPTV runtime data (provider playlists, EPG cache)
+Playlist.m3u
+Playlist.trimmed.m3u
+xmltv_cache.xml
+xmltv_cache.trimmed.xml
+
+# Recordings & DVR buffer
 *.ts
 *.mp4
 dvr_buffer/
 recordings/
-.env
+
+# Build artifacts / release packages
+*.zip
+
+# Cloudflared binaries (download separately, don't commit)
+cloudflared*.exe
+cloudflared-linux-*
+cloudflared-darwin-*
+
+# Docker overrides
 docker-compose.yml
 docker-compose.backup*.yml
 docker-compose.*.backup.yml
+
+# OS
+.DS_Store
+Thumbs.db

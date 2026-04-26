@@ -36,6 +36,7 @@ android/          Android TV app (Kotlin, Compose, Media3)
 - Read `docs/ROADMAP.md` and `docs/ARCHITECTURE_CODEMAP.md` before starting any new feature — they define the API contract between PC and clients.
 - PC modules live in `core/`. Never put business logic in `ui/` or `static/`.
 - Android TV is a thin client — no FFmpeg, no file management. All heavy work stays on PC.
+- **Android TV parity:** For playback and guide behavior, treat `static/remote.html` (mobile webapp) as the reference implementation — same REST/HLS URLs, same server-normalized A/V; do not add client-side per-channel format forks.
 - DVR buffer segments live in a separate folder from completed scheduled recordings.
 - Both DVR caps (hours AND GB) must always be enforced together.
 - HTTP range requests are required on all file-serving endpoints (`/dvr/stream/`, `/recordings/`).

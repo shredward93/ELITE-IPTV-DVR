@@ -1,5 +1,11 @@
 package com.elite.iptv.dvr.ui.player
 
+/**
+ * Live playback uses the **same** server URLs and HLS DVR contract as the mobile webapp
+ * (`static/remote.html`: hls.js → server playlist/segments). The PC normalizes what each
+ * channel delivers; do **not** add per-channel codec or audio branching here — keep one
+ * ExoPlayer path and let Media3 + the manifest handle it (mirrors proven web behavior).
+ */
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box

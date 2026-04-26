@@ -47,6 +47,7 @@ import androidx.tv.material3.Surface
 import com.elite.iptv.dvr.api.Category
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.api.EpgListing
+import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -55,6 +56,8 @@ import java.util.Locale
 import java.util.TimeZone
 
 private const val DP_PER_MIN = 4   // dp per minute in the timeline
+/** Channel gutter width — aligns with [GuideTimeHeader] and TiviMate-like dense rail. */
+private val ChannelGutterDp = 176.dp
 
 @Composable
 fun EpgGuideScreen(
@@ -85,21 +88,22 @@ fun EpgGuideScreen(
         if (ids.isNotEmpty()) viewModel.loadGuideEpgBatched(ids)
     }
 
-    Row(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Row(modifier = Modifier.fillMaxSize().background(EliteColors.ink)) {
 
-        // ── Left sidebar: categories ──────────────────────────────────────────
+        // ── Left sidebar: categories (TiviMate-style narrow rail) ─────────────
         Column(
             modifier = Modifier
-                .width(220.dp)
+                .width(200.dp)
                 .fillMaxHeight()
-                .background(Color(0xFF0C0C0C)),
+                .background(EliteColors.inkSoft),
         ) {
             Text(
                 text = "CATEGORIES",
-                color = Color(0xFFF89344),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
+                color = EliteColors.paperMuted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.6.sp,
+                modifier = Modifier.padding(start = 14.dp, top = 18.dp, bottom = 8.dp),
             )
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 16.dp),
@@ -117,20 +121,22 @@ fun EpgGuideScreen(
 
         // ── Right panel: TV guide grid ────────────────────────────────────────
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(EliteColors.surface),
         ) {
             // Header bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF111111))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .background(EliteColors.surface2)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = selectedCategory?.categoryName ?: "TV Guide",
-                    color = Color.White,
+                    color = EliteColors.paper,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -138,12 +144,12 @@ fun EpgGuideScreen(
                     Button(
                         onClick = onBack,
                         colors = ButtonDefaults.colors(
-                            containerColor        = Color(0xFF2E2E2E),
-                            focusedContainerColor = Color(0xFFF89344),
+                            containerColor        = EliteColors.surface3,
+                            focusedContainerColor = EliteColors.signal,
                         ),
                         modifier = Modifier.height(40.dp),
                     ) {
-                        Text("← Back", color = Color.White, fontSize = 15.sp)
+                        Text("← Back", color = EliteColors.paper, fontSize = 15.sp)
                     }
                 }
             }
@@ -153,14 +159,14 @@ fun EpgGuideScreen(
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             "← Select a category to browse the guide",
-                            color = Color.Gray,
-                            fontSize = 18.sp,
+                            color = EliteColors.paperMuted,
+                            fontSize = 16.sp,
                         )
                     }
                 }
                 viewModel.categoryChannels.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFFF89344))
+                        CircularProgressIndicator(color = EliteColors.signal)
                     }
                 }
                 else -> {
@@ -196,19 +202,19 @@ fun EpgGuideScreen(
     scheduleTarget?.let { (ch, listing) ->
         AlertDialog(
             onDismissRequest = { scheduleTarget = null; scheduleStatus = "" },
-            title = { Text("Schedule Recording", color = Color.White) },
+            title = { Text("Schedule Recording", color = EliteColors.paper) },
             text = {
                 Column {
-                    Text(listing.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                    Text(listing.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = EliteColors.paper)
                     Text(
                         "${formatEpgTime(listing.start)} – ${formatEpgTime(listing.stop)}",
-                        color = Color.Gray,
+                        color = EliteColors.paperMuted,
                         fontSize = 15.sp,
                     )
-                    Text("Channel: ${ch.name}", color = Color.Gray, fontSize = 14.sp)
+                    Text("Channel: ${ch.name}", color = EliteColors.paper2, fontSize = 14.sp)
                     if (scheduleStatus.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(scheduleStatus, color = Color(0xFF2ECC71), fontSize = 15.sp)
+                        Text(scheduleStatus, color = EliteColors.ok, fontSize = 15.sp)
                     }
                 }
             },
@@ -227,16 +233,16 @@ fun EpgGuideScreen(
                             scheduleStatus = "Failed: ${e.message}"
                         }
                     }
-                }) { Text("Record", color = Color(0xFFF89344)) }
+                }) { Text("Record", color = EliteColors.signal) }
             },
             dismissButton = {
                 TextButton(onClick = { scheduleTarget = null; scheduleStatus = "" }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = EliteColors.paperMuted)
                 }
             },
-            containerColor      = Color(0xFF1E1E1E),
-            titleContentColor   = Color.White,
-            textContentColor    = Color.White,
+            containerColor      = EliteColors.surface2,
+            titleContentColor   = EliteColors.paper,
+            textContentColor    = EliteColors.paper,
         )
     }
 }
@@ -252,24 +258,25 @@ private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> U
             .height(44.dp),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor        = if (selected) Color(0xFF1A2A1A) else Color.Transparent,
-            focusedContainerColor = Color(0xFFF89344),
+            containerColor        = if (selected) EliteColors.signal else Color.Transparent,
+            focusedContainerColor = EliteColors.signal,
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (selected) {
-                Text("►", color = Color(0xFFF89344), fontSize = 12.sp)
+                Text("►", color = EliteColors.ink, fontSize = 11.sp)
                 Spacer(Modifier.width(6.dp))
             }
             Text(
                 text     = category.categoryName,
-                color    = if (selected) Color(0xFFF89344) else Color.White,
-                fontSize = 16.sp,
+                color    = if (selected) EliteColors.ink else EliteColors.paper,
+                fontSize = 15.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -284,12 +291,13 @@ private fun GuideTimeHeader(windowStartMs: Long, windowEndMs: Long) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(28.dp)
-            .background(Color(0xFF181818)),
+            .height(30.dp)
+            .background(EliteColors.inkSoft)
+            .padding(bottom = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Gutter to align with channel name column
-        Box(Modifier.width(160.dp))
+        Box(Modifier.width(ChannelGutterDp))
 
         // Time slots: every 30 minutes across the window
         val spanMin = ((windowEndMs - windowStartMs) / 60_000L).toInt().coerceAtLeast(30)
@@ -297,8 +305,9 @@ private fun GuideTimeHeader(windowStartMs: Long, windowEndMs: Long) {
             val slotMs = windowStartMs + i * 30 * 60_000L
             Text(
                 text     = formatMs(slotMs),
-                color    = Color(0xFF888888),
-                fontSize = 12.sp,
+                color    = EliteColors.paperMuted,
+                fontSize = 11.sp,
+                letterSpacing = 0.6.sp,
                 modifier = Modifier.width((30 * DP_PER_MIN).dp).padding(start = 6.dp),
             )
         }
@@ -334,11 +343,11 @@ private fun GuideChannelRow(
         // Channel name — press to watch live
         Surface(
             onClick = onPlayLive,
-            modifier = Modifier.width(160.dp).height(58.dp),
+            modifier = Modifier.width(ChannelGutterDp).height(58.dp),
             shape  = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
             colors = ClickableSurfaceDefaults.colors(
-                containerColor        = Color(0xFF1A1A1A),
-                focusedContainerColor = Color(0xFFF89344),
+                containerColor        = EliteColors.inkSoft,
+                focusedContainerColor = EliteColors.signal,
             ),
         ) {
             Box(
@@ -349,8 +358,8 @@ private fun GuideChannelRow(
             ) {
                 Text(
                     text     = channel.name,
-                    color    = Color.White,
-                    fontSize = 14.sp,
+                    color    = EliteColors.paper,
+                    fontSize = 13.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -363,16 +372,16 @@ private fun GuideChannelRow(
                 modifier = Modifier
                     .weight(1f)
                     .height(58.dp)
-                    .background(Color(0xFF111111)),
+                    .background(EliteColors.ink),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("  No guide data", color = Color(0xFF444444), fontSize = 13.sp)
+                Text("  No guide data", color = EliteColors.paperMuted, fontSize = 12.sp)
             }
         } else {
             LazyRow(
-                modifier            = Modifier.weight(1f).height(58.dp),
+                modifier              = Modifier.weight(1f).height(58.dp).background(EliteColors.ink),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
-                contentPadding      = PaddingValues(end = 8.dp),
+                contentPadding        = PaddingValues(end = 8.dp),
             ) {
                 items(visible, key = { it.start ?: it.title }) { listing ->
                     val startMs      = parseEpgMs(listing.start)
@@ -407,30 +416,44 @@ private fun ProgramCell(
     Surface(
         onClick  = onClick,
         modifier = Modifier.width(widthDp).height(58.dp),
-        shape    = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+        shape    = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(3.dp)),
         colors   = ClickableSurfaceDefaults.colors(
-            containerColor        = if (isNow) Color(0xFF1A2E1A) else Color(0xFF1E1E1E),
-            focusedContainerColor = if (isNow) Color(0xFF2E7D2E) else Color(0xFF2E2E2E),
+            containerColor        = if (isNow) EliteColors.inkSoft else EliteColors.surface,
+            focusedContainerColor = EliteColors.surface3,
         ),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalArrangement = Arrangement.Center,
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text     = listing.title,
-                color    = if (isNow) Color(0xFF90EE90) else Color.White,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text     = "${formatEpgTime(listing.start)}–${formatEpgTime(listing.stop)}",
-                color    = Color(0xFF888888),
-                fontSize = 11.sp,
-            )
+            if (isNow) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(58.dp)
+                        .background(EliteColors.signal),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text     = listing.title,
+                    color    = if (isNow) EliteColors.signal else EliteColors.paper,
+                    fontSize = 13.sp,
+                    fontWeight = if (isNow) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text     = "${formatEpgTime(listing.start)}–${formatEpgTime(listing.stop)}",
+                    color    = EliteColors.paperMuted,
+                    fontSize = 10.sp,
+                )
+            }
         }
     }
 }

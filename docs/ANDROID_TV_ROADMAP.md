@@ -6,6 +6,8 @@ This is the focused plan for the native **Android TV** client. Server contract, 
 
 - **Thin client:** no FFmpeg, no local file management, no full EPG dataset on device.
 - **Same APIs as the webapp:** Retrofit against the PC server; windowed guide requests to keep payloads small.
+- **Reference the mobile webapp:** `static/remote.html` is the gold standard — hls.js + the same HLS URLs and server output the PC already normalizes (one consistent format per channel from the app’s perspective). Android must mirror that contract (no per-channel codec/audio branching on device).
+- **Guide look:** TiviMate-inspired layout density (dark rail + timeline, orange selection / “now” accent) while **color tokens** stay aligned with the webapp’s `:root` palette in `remote.html` so web + TV feel like one product.
 - **Playback:** Media3 ExoPlayer + server-side DVR HLS (`/dvr/playlist.m3u8`); reuse the warm-buffer + live-offset pattern from `PlayerScreen`.
 
 ## Phase 1 — Performance and guide (current)

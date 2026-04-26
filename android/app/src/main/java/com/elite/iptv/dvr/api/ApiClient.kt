@@ -34,11 +34,11 @@ object ApiClient {
             .create(ApiService::class.java)
     }
 
-    /** Full URL for the live HLS playlist. ExoPlayer consumes this directly. */
+    /** Same live DVR playlist URL the webapp uses (`static/remote.html` → `/dvr/playlist.m3u8`). */
     fun dvrPlaylistUrl(baseUrl: String): String =
         "${baseUrl.trimEnd('/')}/dvr/playlist.m3u8"
 
-    /** Full URL for a completed recording file. */
+    /** Completed file URL — same path model as the webapp’s recording playback. */
     fun recordingUrl(baseUrl: String, filename: String): String =
         "${baseUrl.trimEnd('/')}/recordings/$filename"
 }

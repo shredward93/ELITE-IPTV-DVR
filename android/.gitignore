@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android Studio / IDEA
+.idea/
+*.iml
+
+# Local SDK path (never commit)
+local.properties
+
+# Keystores
+*.jks
+*.keystore

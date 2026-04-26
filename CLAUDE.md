@@ -18,7 +18,7 @@ Dockerfile        Production NAS image (used by REBUILD)
 docs/             All project docs, roadmap, handoff, deployment notes
 assets/           Branding + screenshots (not loaded at runtime)
 NAS App Update/   Windows .bat shortcuts for git push / NAS sync
-android/          Android TV app (Kotlin) — not yet created on this branch
+android/          Android TV app (Kotlin, Compose, Media3)
 ```
 
 ## Skill usage

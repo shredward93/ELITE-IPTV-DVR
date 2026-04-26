@@ -95,10 +95,9 @@ def run_job(job):
             live_dir = os.path.join(config.DVR_BUFFER_DIR, f"live_{job.id}")
             os.makedirs(live_dir, exist_ok=True)
             job.live_dir = live_dir
-            # Parallel HLS for "watch while recording" in the web UI. Browsers
-            # decode AAC in MSE; AC-3/MP2 from a straight -c copy mux are often
-            # silent. Keep video copy; re-encode audio to AAC (same idea as
-            # live_preview.py and completed-recording remux in web_server).
+            # Parallel HLS for "watch while recording" in the web UI.
+            # Video is stream-copied; audio gets its own 128k AAC encode for
+            # this lower-bitrate preview output (main archive uses 192k).
             live_hls_args = [
                 "-map", "0:v:0",
                 "-map", "0:a:0?",
@@ -121,6 +120,11 @@ def run_job(job):
         # output). Placed as an output option it only caps the first output;
         # the HLS output then has no end, ffmpeg never exits, and communicate()
         # blocks past the scheduled duration.
+        #
+        # Audio is always re-encoded to AAC so every saved .ts has a codec
+        # that mobile, Android TV, and browser HLS all decode natively.
+        # This eliminates the live-transcode path in _serve_recording_hls,
+        # meaning playback always uses the instant byterange VOD playlist.
         cmd = [
             "ffmpeg", "-y",
             "-reconnect", "1",
@@ -130,7 +134,11 @@ def run_job(job):
             "-timeout", "15000000",   # 15 s socket read timeout (microseconds)
             "-t", str(int(remaining)),
             "-i", stream_url,
-            "-c", "copy",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-ac", "2",
+            "-ar", "48000",
             out,
             *live_hls_args,
         ]

@@ -31,7 +31,12 @@ interface ApiService {
     // ── EPG ───────────────────────────────────────────────────────────────────
 
     @GET("api/epg")
-    suspend fun getEpg(@Query("channel_id") channelId: String): EpgResponse
+    suspend fun getEpg(
+        @Query("channel_id") channelId: String,
+        @Query("limit") limit: Int = 32,
+        @Query("window_start_ms") windowStartMs: Long = 0L,
+        @Query("window_end_ms") windowEndMs: Long = 0L,
+    ): EpgResponse
 
     @GET("api/categories")
     suspend fun getCategories(): List<Category>
@@ -42,7 +47,9 @@ interface ApiService {
     @GET("api/epg/multi")
     suspend fun getMultiEpg(
         @Query("channel_ids") channelIds: String,
-        @Query("limit") limit: Int = 6,
+        @Query("limit") limit: Int = 12,
+        @Query("window_start_ms") windowStartMs: Long = 0L,
+        @Query("window_end_ms") windowEndMs: Long = 0L,
     ): List<ChannelEpg>
 
     // ── Recordings ────────────────────────────────────────────────────────────

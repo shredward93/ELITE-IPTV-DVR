@@ -287,6 +287,57 @@ def _xmltv_ts(raw: str) -> float:
         return 0.0
 
 
+def _listing_field_to_ms(val) -> int:
+    """Normalise Xtream/XMLTV start|stop|end fields to unix milliseconds (0 if unknown)."""
+    if val is None:
+        return 0
+    try:
+        if isinstance(val, bool):
+            return 0
+        if isinstance(val, (int, float)):
+            v = int(val)
+            if v <= 0:
+                return 0
+            # Heuristic: Xtream unix seconds vs ms
+            if v > 10_000_000_000:
+                return v
+            return v * 1000
+        s = str(val).strip()
+        if not s:
+            return 0
+        if s.isdigit() and len(s) >= 14:
+            ts = _xmltv_ts(s[:14])
+            return int(ts * 1000) if ts else 0
+        if s.isdigit():
+            v = int(s)
+            return v * 1000 if v < 10_000_000_000 else v
+    except Exception:
+        return 0
+    return 0
+
+
+def filter_epg_listings_window(
+    listings: list,
+    window_start_ms: int,
+    window_end_ms: int,
+) -> list:
+    """Keep programmes overlapping [window_start_ms, window_end_ms]."""
+    if not listings or window_start_ms <= 0 or window_end_ms <= 0:
+        return list(listings)
+    if window_end_ms <= window_start_ms:
+        return list(listings)
+    out = []
+    for L in listings:
+        sm = _listing_field_to_ms(L.get("start"))
+        em = _listing_field_to_ms(L.get("stop") or L.get("end"))
+        if sm <= 0 or em <= 0:
+            continue
+        if em > window_start_ms and sm < window_end_ms:
+            out.append(L)
+    out.sort(key=lambda x: _listing_field_to_ms(x.get("start")))
+    return out
+
+
 # ── module-level singleton ────────────────────────────────────────────────────
 
 _store = _XmltvStore()
@@ -470,7 +521,16 @@ def build_guide_bundle(server_url, username, password,
 
 # ── legacy single-channel EPG (still used by PC UI) ──────────────────────────
 
-def fetch_epg(server_url, username, password, channel_id, limit=16, refresh=False):
+def fetch_epg(
+    server_url,
+    username,
+    password,
+    channel_id,
+    limit=16,
+    refresh=False,
+    window_start_ms: int = 0,
+    window_end_ms: int = 0,
+):
     """Return listings for a single channel_id from XMLTV store or Xtream fallback."""
     _ensure_xmltv(server_url, username, password)
 
@@ -479,9 +539,14 @@ def fetch_epg(server_url, username, password, channel_id, limit=16, refresh=Fals
         # by fetching channel info; for speed, try store by raw channel_id first
         listings = _store.get_listings(channel_id)
         if listings:
+            if window_start_ms > 0 and window_end_ms > 0:
+                listings = filter_epg_listings_window(listings, window_start_ms, window_end_ms)
             return listings[:limit]
         # No match — fall through to Xtream
-    return _fetch_xtream_epg(server_url, username, password, channel_id, limit)
+    raw = _fetch_xtream_epg(server_url, username, password, channel_id, max(limit, 48))
+    if window_start_ms > 0 and window_end_ms > 0:
+        raw = filter_epg_listings_window(raw, window_start_ms, window_end_ms)
+    return raw[:limit]
 
 
 def _fetch_xtream_epg(server_url, username, password, channel_id, limit=16):
@@ -504,12 +569,30 @@ def _fetch_xtream_epg(server_url, username, password, channel_id, limit=16):
         return []
 
 
-def fetch_multi_epg(server_url, username, password, channel_ids, limit=6, refresh=False):
+def fetch_multi_epg(
+    server_url,
+    username,
+    password,
+    channel_ids,
+    limit=6,
+    refresh=False,
+    window_start_ms: int = 0,
+    window_end_ms: int = 0,
+):
     """Legacy multi-channel EPG — used by /api/epg/multi."""
     _ensure_xmltv(server_url, username, password)
     results = []
     for cid in channel_ids[:30]:
-        listings = fetch_epg(server_url, username, password, cid, limit=limit)
+        listings = fetch_epg(
+            server_url,
+            username,
+            password,
+            cid,
+            limit=limit,
+            refresh=refresh,
+            window_start_ms=window_start_ms,
+            window_end_ms=window_end_ms,
+        )
         results.append({"channel_id": cid, "listings": listings})
     return results
 

@@ -51,7 +51,7 @@ fun TVGuideScreen(
     onPlayLive: () -> Unit,
     onBack: () -> Unit,
 ) {
-    LaunchedEffect(channelId) { viewModel.loadEpg(channelId) }
+    LaunchedEffect(channelId) { viewModel.loadEpgForChannel(channelId) }
     BackHandler { onBack() }
 
     val scope = rememberCoroutineScope()

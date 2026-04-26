@@ -489,7 +489,25 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if not channel_id:
                 self._json({"listings": []})
             else:
-                listings = fetch_epg(config.SERVER_URL, config.USERNAME, config.PASSWORD, channel_id, limit=12)
+                try:
+                    limit = int(qs.get("limit", ["12"])[0])
+                except ValueError:
+                    limit = 12
+                limit = max(1, min(limit, 64))
+                try:
+                    w0 = int(qs.get("window_start_ms", ["0"])[0])
+                    w1 = int(qs.get("window_end_ms", ["0"])[0])
+                except ValueError:
+                    w0, w1 = 0, 0
+                listings = fetch_epg(
+                    config.SERVER_URL,
+                    config.USERNAME,
+                    config.PASSWORD,
+                    channel_id,
+                    limit=limit,
+                    window_start_ms=w0,
+                    window_end_ms=w1,
+                )
                 self._json({"listings": listings})
 
         # ── Android TV: EPG category browser ─────────────────────────────────
@@ -530,7 +548,16 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/epg/multi":
             ids_str = qs.get("channel_ids", [""])[0]
-            limit   = int(qs.get("limit", ["6"])[0])
+            try:
+                limit = int(qs.get("limit", ["6"])[0])
+            except ValueError:
+                limit = 6
+            limit = max(1, min(limit, 64))
+            try:
+                w0 = int(qs.get("window_start_ms", ["0"])[0])
+                w1 = int(qs.get("window_end_ms", ["0"])[0])
+            except ValueError:
+                w0, w1 = 0, 0
             if not ids_str:
                 self._json([])
                 return
@@ -541,6 +568,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 config.PASSWORD,
                 channel_ids,
                 limit=limit,
+                window_start_ms=w0,
+                window_end_ms=w1,
             )
             self._json(results)
 

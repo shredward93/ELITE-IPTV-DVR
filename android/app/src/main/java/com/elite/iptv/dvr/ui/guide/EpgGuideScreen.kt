@@ -55,8 +55,6 @@ import java.util.Locale
 import java.util.TimeZone
 
 private const val DP_PER_MIN = 4   // dp per minute in the timeline
-private const val WINDOW_MINS = 180 // 3-hour window
-private const val PRE_MINS = 30     // show 30 min before now
 
 @Composable
 fun EpgGuideScreen(
@@ -71,8 +69,9 @@ fun EpgGuideScreen(
     var scheduleStatus by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    val nowMs = remember { System.currentTimeMillis() }
-    val windowStartMs = nowMs - PRE_MINS * 60_000L
+    val anchorMs = remember { System.currentTimeMillis() }
+    val windowStartMs = anchorMs - GuideConstants.WINDOW_PRE_MINUTES * 60_000L
+    val windowEndMs = windowStartMs + GuideConstants.WINDOW_TOTAL_MINUTES * 60_000L
 
     LaunchedEffect(Unit) { viewModel.loadCategories() }
 
@@ -82,8 +81,8 @@ fun EpgGuideScreen(
     }
 
     LaunchedEffect(viewModel.categoryChannels) {
-        val ids = viewModel.categoryChannels.take(30).map { it.id }
-        if (ids.isNotEmpty()) viewModel.loadGuideEpg(ids, limit = 8)
+        val ids = viewModel.categoryChannels.take(48).map { it.id }
+        if (ids.isNotEmpty()) viewModel.loadGuideEpgBatched(ids)
     }
 
     Row(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -166,19 +165,20 @@ fun EpgGuideScreen(
                 }
                 else -> {
                     // Time header row
-                    GuideTimeHeader(windowStartMs = windowStartMs)
+                    GuideTimeHeader(windowStartMs = windowStartMs, windowEndMs = windowEndMs)
 
                     // Channel + programme rows
                     LazyColumn(
                         contentPadding = PaddingValues(bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        items(viewModel.categoryChannels.take(50), key = { it.id }) { ch ->
+                        items(viewModel.categoryChannels.take(48), key = { it.id }) { ch ->
                             GuideChannelRow(
                                 channel       = ch,
                                 listings      = viewModel.guideEpg[ch.id] ?: emptyList(),
                                 windowStartMs = windowStartMs,
-                                nowMs         = nowMs,
+                                windowEndMs   = windowEndMs,
+                                nowMs         = anchorMs,
                                 onPlayLive    = { onChannelPlay(ch.id, ch.name) },
                                 onRecord      = { listing ->
                                     scheduleStatus = ""
@@ -280,7 +280,7 @@ private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> U
 // ── Time header ───────────────────────────────────────────────────────────────
 
 @Composable
-private fun GuideTimeHeader(windowStartMs: Long) {
+private fun GuideTimeHeader(windowStartMs: Long, windowEndMs: Long) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -291,8 +291,9 @@ private fun GuideTimeHeader(windowStartMs: Long) {
         // Gutter to align with channel name column
         Box(Modifier.width(160.dp))
 
-        // Time slots: every 30 minutes across the 3-hour window
-        (0 until (WINDOW_MINS / 30)).forEach { i ->
+        // Time slots: every 30 minutes across the window
+        val spanMin = ((windowEndMs - windowStartMs) / 60_000L).toInt().coerceAtLeast(30)
+        (0 until (spanMin / 30)).forEach { i ->
             val slotMs = windowStartMs + i * 30 * 60_000L
             Text(
                 text     = formatMs(slotMs),
@@ -311,13 +312,12 @@ private fun GuideChannelRow(
     channel: Channel,
     listings: List<EpgListing>,
     windowStartMs: Long,
+    windowEndMs: Long,
     nowMs: Long,
     onPlayLive: () -> Unit,
     onRecord: (EpgListing) -> Unit,
 ) {
-    val windowEndMs = windowStartMs + WINDOW_MINS * 60_000L
-
-    val visible = remember(listings, windowStartMs) {
+    val visible = remember(listings, windowStartMs, windowEndMs) {
         listings.filter { l ->
             val stop  = parseEpgMs(l.stop)
             val start = parseEpgMs(l.start)

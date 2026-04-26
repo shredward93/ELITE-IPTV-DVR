@@ -17,11 +17,20 @@ import com.elite.iptv.dvr.api.EpgListing
 import com.elite.iptv.dvr.api.FavoriteRequest
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
+import com.elite.iptv.dvr.ui.guide.GuideConstants
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private const val GUIDE_EPG_CHUNK = 8
+        private const val GUIDE_EPG_LISTING_LIMIT = 12
+    }
+
     private val prefs = application.getSharedPreferences("elite_dvr", Context.MODE_PRIVATE)
+
+    /** Cancels stale single-channel EPG responses when the user changes channel quickly. */
+    private var epgRequestGeneration = 0
 
     var pcUrl by mutableStateOf(prefs.getString("pc_url", "") ?: "")
         private set
@@ -101,9 +110,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── EPG ───────────────────────────────────────────────────────────────────
 
-    fun loadEpg(channelId: String) {
+    fun loadEpgForChannel(channelId: String) {
         viewModelScope.launch {
-            runCatching { epgListings = ApiClient.service.getEpg(channelId).listings }
+            val gen = ++epgRequestGeneration
+            val (ws, we) = GuideConstants.windowBounds()
+            runCatching {
+                val listings = ApiClient.service.getEpg(
+                    channelId = channelId,
+                    limit = 48,
+                    windowStartMs = ws,
+                    windowEndMs = we,
+                ).listings
+                if (gen == epgRequestGeneration) {
+                    epgListings = listings
+                }
+            }.onFailure {
+                if (gen == epgRequestGeneration) {
+                    epgListings = emptyList()
+                }
+            }
         }
     }
 
@@ -130,12 +155,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadGuideEpg(channelIds: List<String>, limit: Int = 6) {
-        viewModelScope.launch {
-            runCatching {
-                val result = ApiClient.service.getMultiEpg(channelIds.joinToString(","), limit)
-                guideEpg = result.associate { it.channelId to it.listings }
-            }
+    /**
+     * Loads EPG for one chunk of channels (same time window as [GuideConstants]).
+     * Merge into [guideEpg] so the UI can fill in progressively.
+     */
+    suspend fun loadGuideEpgChunk(channelIds: List<String>) {
+        if (channelIds.isEmpty()) return
+        val (ws, we) = GuideConstants.windowBounds()
+        val result = ApiClient.service.getMultiEpg(
+            channelIds = channelIds.joinToString(","),
+            limit = GUIDE_EPG_LISTING_LIMIT,
+            windowStartMs = ws,
+            windowEndMs = we,
+        )
+        val patch = result.associate { it.channelId to it.listings }
+        guideEpg = guideEpg + patch
+    }
+
+    /** Sequentially load guide rows in small batches to avoid huge single responses. */
+    suspend fun loadGuideEpgBatched(channelIds: List<String>) {
+        if (channelIds.isEmpty()) return
+        channelIds.chunked(GUIDE_EPG_CHUNK).forEach { chunk ->
+            loadGuideEpgChunk(chunk)
         }
     }
 

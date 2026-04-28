@@ -437,6 +437,33 @@ class _BundleCache:
 _bundle_cache = _BundleCache()
 
 
+_stream_meta_cache_lock = threading.RLock()
+_stream_meta_cache_loaded_at = 0.0
+_stream_meta_cache = {}
+
+
+def _stream_epg_meta(server_url, username, password, channel_id: str) -> tuple[str, str]:
+    """
+    Resolve stream_id -> (epg_channel_id, channel_name) using a short-lived cache.
+    Returns ("", "") if no mapping is known.
+    """
+    global _stream_meta_cache_loaded_at, _stream_meta_cache
+    now = time.time()
+    with _stream_meta_cache_lock:
+        if (not _stream_meta_cache) or (now - _stream_meta_cache_loaded_at > 600):
+            channels = _fetch_all_channels(server_url, username, password)
+            _stream_meta_cache = {
+                str(ch.get("id", "")): (
+                    str(ch.get("epg_channel_id", "") or ""),
+                    str(ch.get("name", "") or ""),
+                )
+                for ch in channels
+                if ch.get("id")
+            }
+            _stream_meta_cache_loaded_at = now
+        return _stream_meta_cache.get(str(channel_id), ("", ""))
+
+
 def _ensure_xmltv(server_url, username, password):
     """Trigger background load if store is empty or stale."""
     if _store.is_empty() or _store.needs_refresh():
@@ -542,6 +569,14 @@ def fetch_epg(
             if window_start_ms > 0 and window_end_ms > 0:
                 listings = filter_epg_listings_window(listings, window_start_ms, window_end_ms)
             return listings[:limit]
+        # Resolve stream_id -> epg_channel_id and try XMLTV again.
+        epg_id, channel_name = _stream_epg_meta(server_url, username, password, channel_id)
+        if epg_id or channel_name:
+            listings = _store.get_listings(epg_id, channel_name)
+            if listings:
+                if window_start_ms > 0 and window_end_ms > 0:
+                    listings = filter_epg_listings_window(listings, window_start_ms, window_end_ms)
+                return listings[:limit]
         # No match — fall through to Xtream
     raw = _fetch_xtream_epg(server_url, username, password, channel_id, max(limit, 48))
     if window_start_ms > 0 and window_end_ms > 0:

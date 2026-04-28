@@ -15,9 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,12 +43,16 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import com.elite.iptv.dvr.api.Channel
+import com.elite.iptv.dvr.ui.theme.EliteColors
+import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 
 @Composable
@@ -69,7 +77,7 @@ fun ChannelBrowserScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(EliteColors.ink)
             .padding(24.dp),
     ) {
         // ── Header ────────────────────────────────────────────────────────────
@@ -78,12 +86,20 @@ fun ChannelBrowserScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "ELITE IPTV DVR",
-                color = Color(0xFFF89344),
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            Column {
+                Text(
+                    text = "ELITE IPTV DVR",
+                    color = EliteColors.signal,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "Server-first TV shell",
+                    color = EliteColors.paperMuted,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.8.sp,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TvButton("TV Guide",    onClick = onGuideGridOpen)
                 TvButton("DVR Library", onClick = onLibraryOpen)
@@ -95,7 +111,7 @@ fun ChannelBrowserScreen(
 
         // ── Favorites row ─────────────────────────────────────────────────────
         if (viewModel.favorites.isNotEmpty()) {
-            Text("Favourites", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text("Favourites", color = EliteColors.paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             LazyRow(
                 contentPadding = PaddingValues(end = 16.dp),
@@ -108,7 +124,6 @@ fun ChannelBrowserScreen(
                     ChannelCard(
                         channel  = ch,
                         onClick  = { onChannelSelected(ch.id, ch.name) },
-                        onLongClick = { onGuideOpen(ch.id, ch.name) },
                     )
                 }
             }
@@ -122,19 +137,35 @@ fun ChannelBrowserScreen(
                 query = q
                 viewModel.searchChannels(q)
             },
-            label = { Text("Search channels", fontSize = 16.sp) },
+            label = { Text("Search channels", fontSize = 16.sp, color = EliteColors.paperMuted) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { viewModel.searchChannels(query) }),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = EliteColors.signal,
+                unfocusedBorderColor = EliteColors.rule,
+                focusedTextColor = EliteColors.paper,
+                unfocusedTextColor = EliteColors.paper,
+                cursorColor = EliteColors.signal,
+                focusedLabelColor = EliteColors.signal,
+                unfocusedLabelColor = EliteColors.paperMuted,
+            ),
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Press OK to play. Use TV Guide for schedule details.",
+            color = EliteColors.paperMuted,
+            fontSize = 11.sp,
+            letterSpacing = 0.4.sp,
+        )
+        Spacer(Modifier.height(12.dp))
 
         // ── Results grid ──────────────────────────────────────────────────────
         if (viewModel.searchResults.isEmpty() && query.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Type to search channels", color = Color.Gray, fontSize = 18.sp)
+                Text("Type to search channels", color = EliteColors.paperMuted, fontSize = 18.sp)
             }
         } else {
             LazyVerticalGrid(
@@ -148,7 +179,6 @@ fun ChannelBrowserScreen(
                     ChannelCard(
                         channel  = ch,
                         onClick  = { onChannelSelected(ch.id, ch.name) },
-                        onLongClick = { onGuideOpen(ch.id, ch.name) },
                     )
                 }
             }
@@ -160,8 +190,9 @@ fun ChannelBrowserScreen(
 private fun ChannelCard(
     channel: Channel,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
     Surface(
         onClick = onClick,
         modifier = Modifier
@@ -169,10 +200,20 @@ private fun ChannelCard(
             .height(64.dp),
         shape = ClickableSurfaceDefaults.shape(shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor        = Color(0xFF1E1E1E),
-            focusedContainerColor = Color(0xFFF89344),
-            pressedContainerColor = Color(0xFFD4791E),
+            containerColor        = EliteColors.surface,
+            focusedContainerColor = EliteColors.signal,
+            pressedContainerColor = EliteColors.surface3,
         ),
+        scale = TvFocusDefaults.surfaceScaleCard,
+        border = ClickableSurfaceDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(8.dp),
+            ),
+        ),
+        interactionSource = interactionSource,
     ) {
         Box(
             modifier = Modifier
@@ -183,7 +224,7 @@ private fun ChannelCard(
             Text(
                 text = channel.name,
                 fontSize = 18.sp,
-                color = Color.White,
+                color = if (focused) EliteColors.ink else EliteColors.paper,
                 maxLines = 1,
             )
         }
@@ -195,11 +236,24 @@ private fun TvButton(text: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         modifier = Modifier.size(width = 140.dp, height = 44.dp),
+        scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.055f, pressedScale = 1f),
+        border = ButtonDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(10.dp),
+            ),
+        ),
         colors = ButtonDefaults.colors(
-            containerColor        = Color(0xFF2E2E2E),
-            focusedContainerColor = Color(0xFFF89344),
+            containerColor        = EliteColors.surface3,
+            contentColor          = EliteColors.paper,
+            focusedContainerColor = EliteColors.signal,
+            focusedContentColor   = EliteColors.ink,
+            pressedContainerColor = EliteColors.signal,
+            pressedContentColor   = EliteColors.ink,
         ),
     ) {
-        Text(text, fontSize = 16.sp, color = Color.White)
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }

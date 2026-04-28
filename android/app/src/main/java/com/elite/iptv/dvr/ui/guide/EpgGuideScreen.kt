@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults as MaterialButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +32,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -48,6 +53,7 @@ import com.elite.iptv.dvr.api.Category
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.api.EpgListing
 import com.elite.iptv.dvr.ui.theme.EliteColors
+import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -143,13 +149,26 @@ fun EpgGuideScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onBack,
+                        modifier = Modifier.height(40.dp),
+                        scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.055f, pressedScale = 1f),
+                        border = ButtonDefaults.border(
+                            border = Border.None,
+                            focusedBorder = Border(
+                                border = BorderStroke(2.dp, EliteColors.signal),
+                                inset = 0.dp,
+                                shape = RoundedCornerShape(10.dp),
+                            ),
+                        ),
                         colors = ButtonDefaults.colors(
                             containerColor        = EliteColors.surface3,
+                            contentColor          = EliteColors.paper,
                             focusedContainerColor = EliteColors.signal,
+                            focusedContentColor   = EliteColors.ink,
+                            pressedContainerColor = EliteColors.signal,
+                            pressedContentColor   = EliteColors.ink,
                         ),
-                        modifier = Modifier.height(40.dp),
                     ) {
-                        Text("← Back", color = EliteColors.paper, fontSize = 15.sp)
+                        Text("← Back", fontSize = 15.sp)
                     }
                 }
             }
@@ -219,26 +238,36 @@ fun EpgGuideScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        try {
-                            viewModel.scheduleRecording(
-                                channelId    = ch.id,
-                                channelName  = ch.name,
-                                startTime    = listing.start ?: "",
-                                durationMins = epgDurationMins(listing.start, listing.stop),
-                            )
-                            scheduleStatus = "Scheduled."
-                        } catch (e: Exception) {
-                            scheduleStatus = "Failed: ${e.message}"
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                viewModel.scheduleRecording(
+                                    channelId    = ch.id,
+                                    channelName  = ch.name,
+                                    startTime    = schedulerStartTimeFromEpg(listing.start),
+                                    durationMins = epgDurationMins(listing.start, listing.stop),
+                                )
+                                scheduleStatus = "Scheduled."
+                            } catch (e: Exception) {
+                                scheduleStatus = "Failed: ${e.message}"
+                            }
                         }
-                    }
-                }) { Text("Record", color = EliteColors.signal) }
+                    },
+                    colors = MaterialButtonDefaults.textButtonColors(
+                        contentColor = EliteColors.signal,
+                        disabledContentColor = EliteColors.paperMuted,
+                    ),
+                ) { Text("Record") }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleTarget = null; scheduleStatus = "" }) {
-                    Text("Cancel", color = EliteColors.paperMuted)
-                }
+                TextButton(
+                    onClick = { scheduleTarget = null; scheduleStatus = "" },
+                    colors = MaterialButtonDefaults.textButtonColors(
+                        contentColor = EliteColors.paperMuted,
+                        disabledContentColor = EliteColors.paperMuted,
+                    ),
+                ) { Text("Cancel") }
             },
             containerColor      = EliteColors.surface2,
             titleContentColor   = EliteColors.paper,
@@ -251,6 +280,9 @@ fun EpgGuideScreen(
 
 @Composable
 private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val onSignalBg = selected || focused
     Surface(
         onClick = onClick,
         modifier = Modifier
@@ -261,6 +293,16 @@ private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> U
             containerColor        = if (selected) EliteColors.signal else Color.Transparent,
             focusedContainerColor = EliteColors.signal,
         ),
+        scale = TvFocusDefaults.surfaceScaleRail,
+        border = ClickableSurfaceDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(0.dp),
+            ),
+        ),
+        interactionSource = interactionSource,
     ) {
         Row(
             modifier = Modifier
@@ -274,7 +316,7 @@ private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> U
             }
             Text(
                 text     = category.categoryName,
-                color    = if (selected) EliteColors.ink else EliteColors.paper,
+                color    = if (onSignalBg) EliteColors.ink else EliteColors.paper,
                 fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
@@ -341,6 +383,8 @@ private fun GuideChannelRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Channel name — press to watch live
+        val gutterInteraction = remember { MutableInteractionSource() }
+        val gutterFocused by gutterInteraction.collectIsFocusedAsState()
         Surface(
             onClick = onPlayLive,
             modifier = Modifier.width(ChannelGutterDp).height(58.dp),
@@ -349,6 +393,16 @@ private fun GuideChannelRow(
                 containerColor        = EliteColors.inkSoft,
                 focusedContainerColor = EliteColors.signal,
             ),
+            scale = TvFocusDefaults.surfaceScaleCompact,
+            border = ClickableSurfaceDefaults.border(
+                border = Border.None,
+                focusedBorder = Border(
+                    border = BorderStroke(2.dp, EliteColors.signal),
+                    inset = 0.dp,
+                    shape = RoundedCornerShape(0.dp),
+                ),
+            ),
+            interactionSource = gutterInteraction,
         ) {
             Box(
                 modifier = Modifier
@@ -358,7 +412,7 @@ private fun GuideChannelRow(
             ) {
                 Text(
                     text     = channel.name,
-                    color    = EliteColors.paper,
+                    color    = if (gutterFocused) EliteColors.ink else EliteColors.paper,
                     fontSize = 13.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -420,6 +474,15 @@ private fun ProgramCell(
         colors   = ClickableSurfaceDefaults.colors(
             containerColor        = if (isNow) EliteColors.inkSoft else EliteColors.surface,
             focusedContainerColor = EliteColors.surface3,
+        ),
+        scale = TvFocusDefaults.surfaceScaleCompact,
+        border = ClickableSurfaceDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(3.dp),
+            ),
         ),
     ) {
         Row(
@@ -495,4 +558,11 @@ internal fun epgDurationMins(start: String?, stop: String?): Int {
         }
         (toMins(stop) - toMins(start)).coerceAtLeast(30).toInt()
     } catch (_: Exception) { 60 }
+}
+
+internal fun schedulerStartTimeFromEpg(raw: String?): String {
+    val startMs = parseEpgMs(raw)
+    val nowMs = System.currentTimeMillis()
+    if (startMs <= nowMs + 60_000L) return "NOW"
+    return SimpleDateFormat("hh:mm a", Locale.US).format(Date(startMs))
 }

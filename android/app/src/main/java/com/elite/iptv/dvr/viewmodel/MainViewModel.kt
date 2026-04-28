@@ -18,6 +18,7 @@ import com.elite.iptv.dvr.api.FavoriteRequest
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
 import com.elite.iptv.dvr.ui.guide.GuideConstants
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -115,12 +116,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val gen = ++epgRequestGeneration
             val (ws, we) = GuideConstants.windowBounds()
             runCatching {
-                val listings = ApiClient.service.getEpg(
-                    channelId = channelId,
-                    limit = 48,
-                    windowStartMs = ws,
-                    windowEndMs = we,
-                ).listings
+                var listings: List<EpgListing> = emptyList()
+                for (attempt in 0 until 4) {
+                    listings = ApiClient.service.getEpg(
+                        channelId = channelId,
+                        limit = 48,
+                        windowStartMs = ws,
+                        windowEndMs = we,
+                    ).listings
+                    if (listings.isNotEmpty() || attempt == 3) break
+                    delay(1500)
+                }
                 if (gen == epgRequestGeneration) {
                     epgListings = listings
                 }
@@ -175,8 +181,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Sequentially load guide rows in small batches to avoid huge single responses. */
     suspend fun loadGuideEpgBatched(channelIds: List<String>) {
         if (channelIds.isEmpty()) return
+        var anyData = false
         channelIds.chunked(GUIDE_EPG_CHUNK).forEach { chunk ->
             loadGuideEpgChunk(chunk)
+            if (!anyData) {
+                anyData = chunk.any { id -> !guideEpg[id].isNullOrEmpty() }
+            }
+        }
+        if (!anyData) {
+            delay(2000)
+            channelIds.chunked(GUIDE_EPG_CHUNK).forEach { chunk ->
+                loadGuideEpgChunk(chunk)
+            }
         }
     }
 

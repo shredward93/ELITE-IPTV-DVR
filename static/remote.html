@@ -2325,7 +2325,18 @@ function closeInlinePlayer(cardId){
   if(holder._hideTimer){clearTimeout(holder._hideTimer); holder._hideTimer=null;}
   if(holder._transcodeTimer){clearTimeout(holder._transcodeTimer); holder._transcodeTimer=null;}
   if(holder._keyHandler){document.removeEventListener('keydown',holder._keyHandler);}
-  if(document.fullscreenElement===holder) document.exitFullscreen().catch(()=>{});
+  if(video && video.webkitDisplayingFullscreen && typeof video.webkitExitFullscreen==='function'){
+    try{video.webkitExitFullscreen();}catch(e){}
+  }
+  if(document.fullscreenElement===holder){
+    const exitFs=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen;
+    if(typeof exitFs==='function'){
+      try{
+        const p=exitFs.call(document);
+        if(p&&typeof p.catch==='function') p.catch(()=>{});
+      }catch(e){}
+    }
+  }
   holder.remove();
 }
 function _recPip(btn){
@@ -2340,7 +2351,13 @@ function _recPip(btn){
 function _recFullscreen(btn){
   const wrap=btn.closest('.rec-inline-player');
   if(!wrap) return;
-  if(!document.fullscreenElement){
+  const vid=wrap.querySelector('video');
+  const docFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+  const nativeVideoFs = !!(vid && vid.webkitDisplayingFullscreen);
+  if(!docFs && !nativeVideoFs){
+    if(vid && typeof vid.webkitEnterFullscreen==='function'){
+      try{vid.webkitEnterFullscreen(); return;}catch(e){}
+    }
     // Topbar has backdrop-filter which creates a containing block and traps :fullscreen.
     // Detach the live player to <body> so fullscreen can actually cover the viewport.
     if(wrap.id==='channel-inline-player' && !wrap._fsOrigin){
@@ -2357,9 +2374,24 @@ function _recFullscreen(btn){
       document.addEventListener('fullscreenchange', restore);
       document.addEventListener('webkitfullscreenchange', restore);
     }
-    (wrap.requestFullscreen||wrap.webkitRequestFullscreen||wrap.mozRequestFullScreen).call(wrap).catch(()=>{});
+    const requestFs = wrap.requestFullscreen||wrap.webkitRequestFullscreen||wrap.mozRequestFullScreen;
+    if(typeof requestFs==='function'){
+      try{
+        const p=requestFs.call(wrap);
+        if(p&&typeof p.catch==='function') p.catch(()=>{});
+      }catch(e){}
+    }
   } else {
-    (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document).catch(()=>{});
+    if(nativeVideoFs && vid && typeof vid.webkitExitFullscreen==='function'){
+      try{vid.webkitExitFullscreen(); return;}catch(e){}
+    }
+    const exitFs=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen;
+    if(typeof exitFs==='function'){
+      try{
+        const p=exitFs.call(document);
+        if(p&&typeof p.catch==='function') p.catch(()=>{});
+      }catch(e){}
+    }
   }
 }
 function _recShowControls(holder, autoHide){

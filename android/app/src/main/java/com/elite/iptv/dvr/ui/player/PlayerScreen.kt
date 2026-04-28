@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +33,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.elite.iptv.dvr.api.ApiClient
+import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 
@@ -144,7 +144,7 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(EliteColors.ink),
     ) {
         AndroidView(
             factory = { ctx ->
@@ -170,10 +170,10 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                CircularProgressIndicator(color = Color(0xFFF89344))
+                CircularProgressIndicator(color = EliteColors.signal)
                 Text(
                     text = "Starting DVR buffer for $channelName…",
-                    color = Color.White,
+                    color = EliteColors.paper,
                     fontSize = 18.sp,
                     modifier = Modifier.padding(top = 16.dp),
                 )
@@ -183,7 +183,7 @@ fun PlayerScreen(
         error?.let { msg ->
             Text(
                 text = msg,
-                color = Color(0xFFE74C3C),
+                color = EliteColors.live,
                 fontSize = 18.sp,
                 modifier = Modifier
                     .align(Alignment.Center)

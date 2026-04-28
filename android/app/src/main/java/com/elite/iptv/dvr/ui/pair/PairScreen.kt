@@ -1,3 +1,5 @@
+@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+
 package com.elite.iptv.dvr.ui.pair
 
 import androidx.compose.foundation.background
@@ -10,11 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Border
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,12 +31,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,26 +73,27 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(EliteColors.ink),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .width(520.dp)
-                .padding(32.dp),
+                .background(EliteColors.surface, RoundedCornerShape(14.dp))
+                .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = "ELITE IPTV DVR",
-                color = Color(0xFFF89344),
+                color = EliteColors.signal,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "Enter your PC's address to connect",
-                color = Color.Gray,
+                color = EliteColors.paperMuted,
                 fontSize = 18.sp,
             )
             Spacer(Modifier.height(36.dp))
@@ -93,8 +101,8 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                label = { Text("PC Address", fontSize = 16.sp) },
-                placeholder = { Text("http://192.168.1.100:8080") },
+                label = { Text("PC Address", fontSize = 16.sp, color = EliteColors.paperMuted) },
+                placeholder = { Text("http://192.168.1.100:8080", color = EliteColors.paperMuted) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(
@@ -102,6 +110,15 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { connect() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = EliteColors.signal,
+                    unfocusedBorderColor = EliteColors.rule,
+                    focusedTextColor = EliteColors.paper,
+                    unfocusedTextColor = EliteColors.paper,
+                    cursorColor = EliteColors.signal,
+                    focusedLabelColor = EliteColors.signal,
+                    unfocusedLabelColor = EliteColors.paperMuted,
+                ),
             )
 
             Spacer(Modifier.height(20.dp))
@@ -112,12 +129,29 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
+                scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.04f, pressedScale = 1f),
+                border = ButtonDefaults.border(
+                    border = Border.None,
+                    focusedBorder = Border(
+                        border = BorderStroke(2.dp, EliteColors.paper),
+                        inset = 0.dp,
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+                ),
+                colors = ButtonDefaults.colors(
+                    containerColor = EliteColors.signal,
+                    contentColor = EliteColors.ink,
+                    focusedContainerColor = EliteColors.signal,
+                    focusedContentColor = EliteColors.ink,
+                    disabledContainerColor = EliteColors.surface3,
+                    disabledContentColor = EliteColors.paperMuted,
+                ),
             ) {
                 if (isConnecting) {
                     CircularProgressIndicator(
                         modifier = Modifier.height(20.dp).width(20.dp),
                         strokeWidth = 2.dp,
-                        color = Color.White,
+                        color = EliteColors.ink,
                     )
                 } else {
                     Text("Connect", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
@@ -128,7 +162,7 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                 Spacer(Modifier.height(20.dp))
                 Text(
                     text = status,
-                    color = if (isError) Color(0xFFE74C3C) else Color(0xFF2ECC71),
+                    color = if (isError) EliteColors.live else EliteColors.ok,
                     fontSize = 16.sp,
                 )
             }

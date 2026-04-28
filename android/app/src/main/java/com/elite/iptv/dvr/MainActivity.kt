@@ -7,8 +7,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.elite.iptv.dvr.ui.EliteNavHost
+import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
@@ -19,8 +19,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             androidx.compose.material3.Surface(
-                modifier = Modifier.fillMaxSize().background(Color.Black),
-                color = Color.Black,
+                modifier = Modifier.fillMaxSize().background(EliteColors.ink),
+                color = EliteColors.ink,
             ) {
                 EliteNavHost(viewModel)
             }

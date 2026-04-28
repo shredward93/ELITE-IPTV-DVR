@@ -1,5 +1,6 @@
 package com.elite.iptv.dvr.api
 
+import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -26,10 +27,13 @@ object ApiClient {
             )
             .build()
 
+        val gson = GsonBuilder()
+            .registerTypeAdapter(EpgListing::class.java, EpgListingDeserializer)
+            .create()
         _service = Retrofit.Builder()
             .baseUrl(normalized)
             .client(http)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
             .create(ApiService::class.java)
     }

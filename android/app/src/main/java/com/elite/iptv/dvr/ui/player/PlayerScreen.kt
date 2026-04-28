@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
@@ -32,6 +33,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.elite.iptv.dvr.BuildConfig
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
@@ -190,5 +192,15 @@ fun PlayerScreen(
                     .padding(32.dp),
             )
         }
+
+        Text(
+            text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            color = EliteColors.paperMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        )
     }
 }

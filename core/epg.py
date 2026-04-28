@@ -65,7 +65,9 @@ def filter_guide_categories(categories: list) -> list:
     This keeps the current Kodi guide behavior intact apart from category visibility,
     so reverting is as simple as removing this filter call.
     """
-    return [c for c in categories if _is_guide_category_allowed(c.get("category_name", ""))]
+    filtered = [c for c in categories if _is_guide_category_allowed(c.get("category_name", ""))]
+    # If the allowlist removes everything (e.g. non‑US lineups), fall back so the guide still works.
+    return filtered if filtered else list(categories)
 
 
 def _decode(text) -> str:
@@ -584,6 +586,16 @@ def fetch_epg(
     return raw[:limit]
 
 
+def _epg_json_time_str(val) -> str | None:
+    """JSON must expose start/stop as strings so thin clients (Gson String fields) parse reliably."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return str(int(val))
+    s = str(val).strip()
+    return s or None
+
+
 def _fetch_xtream_epg(server_url, username, password, channel_id, limit=16):
     url = (f"{server_url}/player_api.php?username={username}&password={password}"
            f"&action=get_short_epg&stream_id={channel_id}&limit={limit}")
@@ -594,8 +606,10 @@ def _fetch_xtream_epg(server_url, username, password, channel_id, limit=16):
             {
                 "title":       _decode(e.get("title", "")),
                 "description": _decode(e.get("description", "")) or None,
-                "start":       e.get("start") or e.get("start_timestamp"),
-                "stop":        e.get("stop")  or e.get("stop_timestamp"),
+                "start":       _epg_json_time_str(e.get("start") or e.get("start_timestamp")),
+                "stop":        _epg_json_time_str(
+                    e.get("stop") or e.get("stop_timestamp") or e.get("end")
+                ),
             }
             for e in raw
         ]

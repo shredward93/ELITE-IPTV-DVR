@@ -21,18 +21,14 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults as MaterialButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,10 +56,6 @@ import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ChannelBrowserScreen(
@@ -75,7 +67,6 @@ fun ChannelBrowserScreen(
     onSettingsOpen: () -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
-    val scope = rememberCoroutineScope()
     var optionsChannel by remember { mutableStateOf<Channel?>(null) }
     var recordNowFor by remember { mutableStateOf<Channel?>(null) }
     var recordNowMins by remember { mutableStateOf(120) }
@@ -151,9 +142,8 @@ fun ChannelBrowserScreen(
                 items(viewModel.favorites, key = { it.id }) { ch ->
                     ChannelCard(
                         channel = ch,
-                        onPlay = { onChannelSelected(ch.id, ch.name) },
+                        onSelect = { optionsChannel = ch },
                         onGuide = { onGuideOpen(ch.id, ch.name) },
-                        onLongPressOptions = { optionsChannel = ch },
                     )
                 }
             }
@@ -185,7 +175,7 @@ fun ChannelBrowserScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "OK: play • hold OK: Guide / Record / Schedule • MENU / GUIDE / INFO: TV Guide • top TV Guide: full grid",
+            text = "OK: channel actions (Watch live, Guide, Record…) • MENU / GUIDE / INFO: TV Guide • top TV Guide: full grid",
             color = EliteColors.paperMuted,
             fontSize = 11.sp,
             letterSpacing = 0.4.sp,
@@ -208,9 +198,8 @@ fun ChannelBrowserScreen(
                 items(viewModel.searchResults, key = { it.id }) { ch ->
                     ChannelCard(
                         channel = ch,
-                        onPlay = { onChannelSelected(ch.id, ch.name) },
+                        onSelect = { optionsChannel = ch },
                         onGuide = { onGuideOpen(ch.id, ch.name) },
-                        onLongPressOptions = { optionsChannel = ch },
                     )
                 }
             }
@@ -229,10 +218,10 @@ fun ChannelBrowserScreen(
         }
 
         optionsChannel?.let { ch ->
-            ChannelOptionsSheet(
+            ChannelOptionsDialog(
                 channel = ch,
                 onDismiss = { optionsChannel = null },
-                onPlay = { onChannelSelected(ch.id, ch.name) },
+                onWatchLive = { onChannelSelected(ch.id, ch.name) },
                 onTvGuide = { onGuideOpen(ch.id, ch.name) },
                 onRecordNow = {
                     recordNowMins = 120
@@ -247,189 +236,42 @@ fun ChannelBrowserScreen(
         }
 
         recordNowFor?.let { ch ->
-            AlertDialog(
-                onDismissRequest = { recordNowFor = null },
-                title = { Text("Record now — ${ch.name}", color = EliteColors.paper) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Duration", color = EliteColors.paperMuted, fontSize = 14.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(30, 60, 120, 180).forEach { mins ->
-                                TextButton(
-                                    onClick = { recordNowMins = mins },
-                                    colors = MaterialButtonDefaults.textButtonColors(
-                                        contentColor = if (recordNowMins == mins) EliteColors.signal else EliteColors.paper,
-                                    ),
-                                ) { Text("${mins}m") }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    viewModel.scheduleRecording(
-                                        channelId = ch.id,
-                                        channelName = ch.name,
-                                        startTime = "NOW",
-                                        durationMins = recordNowMins,
-                                    )
-                                }.onSuccess {
-                                    actionNote = "Recording started (${recordNowMins} min)."
-                                }.onFailure {
-                                    actionNote = "Record failed: ${it.message}"
-                                }
-                            }
-                            recordNowFor = null
-                        },
-                        colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.signal),
-                    ) { Text("Start") }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { recordNowFor = null },
-                        colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.paperMuted),
-                    ) { Text("Cancel") }
-                },
-                containerColor = EliteColors.surface2,
-                titleContentColor = EliteColors.paper,
-                textContentColor = EliteColors.paper,
+            RecordNowChannelDialog(
+                channel = ch,
+                viewModel = viewModel,
+                durationMins = recordNowMins,
+                onDurationChange = { recordNowMins = it },
+                onDismiss = { recordNowFor = null },
+                onResultNote = { actionNote = it },
             )
         }
 
         scheduleLaterFor?.let { ch ->
-            val startLabel = scheduleTimeLabelFromOffsetMinutes(scheduleLaterOffsetMins)
-            AlertDialog(
-                onDismissRequest = { scheduleLaterFor = null },
-                title = { Text("Schedule — ${ch.name}", color = EliteColors.paper) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Start in", color = EliteColors.paperMuted, fontSize = 13.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(15, 30, 60, 120).forEach { off ->
-                                TextButton(
-                                    onClick = { scheduleLaterOffsetMins = off },
-                                    colors = MaterialButtonDefaults.textButtonColors(
-                                        contentColor = if (scheduleLaterOffsetMins == off) EliteColors.signal else EliteColors.paper,
-                                    ),
-                                ) { Text("+$off m") }
-                            }
-                        }
-                        Text("Duration", color = EliteColors.paperMuted, fontSize = 13.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(30, 60, 120, 180).forEach { mins ->
-                                TextButton(
-                                    onClick = { scheduleLaterDurationMins = mins },
-                                    colors = MaterialButtonDefaults.textButtonColors(
-                                        contentColor = if (scheduleLaterDurationMins == mins) EliteColors.signal else EliteColors.paper,
-                                    ),
-                                ) { Text("${mins}m") }
-                            }
-                        }
-                        Text("Starts at $startLabel", color = EliteColors.paper2, fontSize = 13.sp)
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    viewModel.scheduleRecording(
-                                        channelId = ch.id,
-                                        channelName = ch.name,
-                                        startTime = startLabel,
-                                        durationMins = scheduleLaterDurationMins,
-                                    )
-                                }.onSuccess {
-                                    actionNote = "Scheduled $startLabel for ${scheduleLaterDurationMins} min."
-                                }.onFailure {
-                                    actionNote = "Schedule failed: ${it.message}"
-                                }
-                            }
-                            scheduleLaterFor = null
-                        },
-                        colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.signal),
-                    ) { Text("Schedule") }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { scheduleLaterFor = null },
-                        colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.paperMuted),
-                    ) { Text("Cancel") }
-                },
-                containerColor = EliteColors.surface2,
-                titleContentColor = EliteColors.paper,
-                textContentColor = EliteColors.paper,
+            ScheduleLaterChannelDialog(
+                channel = ch,
+                viewModel = viewModel,
+                offsetMins = scheduleLaterOffsetMins,
+                onOffsetChange = { scheduleLaterOffsetMins = it },
+                durationMins = scheduleLaterDurationMins,
+                onDurationChange = { scheduleLaterDurationMins = it },
+                onDismiss = { scheduleLaterFor = null },
+                onResultNote = { actionNote = it },
             )
         }
     }
 }
 
-private fun scheduleTimeLabelFromOffsetMinutes(offsetMins: Int): String {
-    val whenMs = System.currentTimeMillis() + offsetMins.toLong() * 60_000L
-    return SimpleDateFormat("hh:mm a", Locale.US).format(Date(whenMs))
-}
-
-@Composable
-private fun ChannelOptionsSheet(
-    channel: Channel,
-    onDismiss: () -> Unit,
-    onPlay: () -> Unit,
-    onTvGuide: () -> Unit,
-    onRecordNow: () -> Unit,
-    onScheduleLater: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(channel.name, color = EliteColors.paper, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Channel actions", color = EliteColors.paperMuted, fontSize = 14.sp)
-                TextButton(
-                    onClick = { onPlay(); onDismiss() },
-                    colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.paper),
-                ) { Text("▶  Play", fontSize = 16.sp) }
-                TextButton(
-                    onClick = { onTvGuide(); onDismiss() },
-                    colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.signal),
-                ) { Text("TV Guide (this channel)", fontSize = 16.sp) }
-                TextButton(
-                    onClick = { onRecordNow(); onDismiss() },
-                    colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.signal),
-                ) { Text("●  Record now…", fontSize = 16.sp) }
-                TextButton(
-                    onClick = { onScheduleLater(); onDismiss() },
-                    colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.signal),
-                ) { Text("Schedule later…", fontSize = 16.sp) }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = MaterialButtonDefaults.textButtonColors(contentColor = EliteColors.paperMuted),
-            ) { Text("Cancel") }
-        },
-        containerColor = EliteColors.surface2,
-        titleContentColor = EliteColors.paper,
-        textContentColor = EliteColors.paper,
-    )
-}
-
 @Composable
 private fun ChannelCard(
     channel: Channel,
-    onPlay: () -> Unit,
+    onSelect: () -> Unit,
     onGuide: () -> Unit,
-    onLongPressOptions: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     Surface(
-        onClick = onPlay,
-        onLongClick = onLongPressOptions,
+        onClick = onSelect,
+        onLongClick = onSelect,
         modifier = Modifier
             .width(220.dp)
             .height(64.dp)

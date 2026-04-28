@@ -52,9 +52,13 @@ import androidx.tv.material3.Surface
 import com.elite.iptv.dvr.api.Category
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.api.EpgListing
+import com.elite.iptv.dvr.ui.channels.ChannelOptionsDialog
+import com.elite.iptv.dvr.ui.channels.RecordNowChannelDialog
+import com.elite.iptv.dvr.ui.channels.ScheduleLaterChannelDialog
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,7 +72,8 @@ private val ChannelGutterDp = 176.dp
 @Composable
 fun EpgGuideScreen(
     viewModel: MainViewModel,
-    onChannelPlay: (id: String, name: String) -> Unit,
+    onWatchLive: (id: String, name: String) -> Unit,
+    onOpenChannelGuide: (id: String, name: String) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler { onBack() }
@@ -76,7 +81,21 @@ fun EpgGuideScreen(
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var scheduleTarget by remember { mutableStateOf<Pair<Channel, EpgListing>?>(null) }
     var scheduleStatus by remember { mutableStateOf("") }
+    var optionsChannel by remember { mutableStateOf<Channel?>(null) }
+    var recordNowFor by remember { mutableStateOf<Channel?>(null) }
+    var recordNowMins by remember { mutableStateOf(120) }
+    var scheduleLaterFor by remember { mutableStateOf<Channel?>(null) }
+    var scheduleLaterOffsetMins by remember { mutableStateOf(30) }
+    var scheduleLaterDurationMins by remember { mutableStateOf(120) }
+    var actionNote by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(actionNote) {
+        if (actionNote.isNotBlank()) {
+            delay(4000)
+            actionNote = ""
+        }
+    }
 
     val anchorMs = remember { System.currentTimeMillis() }
     val windowStartMs = anchorMs - GuideConstants.WINDOW_PRE_MINUTES * 60_000L
@@ -94,7 +113,8 @@ fun EpgGuideScreen(
         if (ids.isNotEmpty()) viewModel.loadGuideEpgBatched(ids)
     }
 
-    Row(modifier = Modifier.fillMaxSize().background(EliteColors.ink)) {
+    Box(Modifier.fillMaxSize().background(EliteColors.ink)) {
+    Row(modifier = Modifier.fillMaxSize()) {
 
         // ── Left sidebar: categories (TiviMate-style narrow rail) ─────────────
         Column(
@@ -204,7 +224,7 @@ fun EpgGuideScreen(
                                 windowStartMs = windowStartMs,
                                 windowEndMs   = windowEndMs,
                                 nowMs         = anchorMs,
-                                onPlayLive    = { onChannelPlay(ch.id, ch.name) },
+                                onOpenOptions = { optionsChannel = ch },
                                 onRecord      = { listing ->
                                     scheduleStatus = ""
                                     scheduleTarget = ch to listing
@@ -214,6 +234,60 @@ fun EpgGuideScreen(
                     }
                 }
             }
+        }
+    }
+
+        if (actionNote.isNotBlank()) {
+            Text(
+                text = actionNote,
+                color = EliteColors.ok,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp),
+            )
+        }
+
+        optionsChannel?.let { ch ->
+            ChannelOptionsDialog(
+                channel = ch,
+                onDismiss = { optionsChannel = null },
+                onWatchLive = { onWatchLive(ch.id, ch.name) },
+                onTvGuide = { onOpenChannelGuide(ch.id, ch.name) },
+                onRecordNow = {
+                    recordNowMins = 120
+                    recordNowFor = ch
+                },
+                onScheduleLater = {
+                    scheduleLaterOffsetMins = 30
+                    scheduleLaterDurationMins = 120
+                    scheduleLaterFor = ch
+                },
+            )
+        }
+
+        recordNowFor?.let { ch ->
+            RecordNowChannelDialog(
+                channel = ch,
+                viewModel = viewModel,
+                durationMins = recordNowMins,
+                onDurationChange = { recordNowMins = it },
+                onDismiss = { recordNowFor = null },
+                onResultNote = { actionNote = it },
+            )
+        }
+
+        scheduleLaterFor?.let { ch ->
+            ScheduleLaterChannelDialog(
+                channel = ch,
+                viewModel = viewModel,
+                offsetMins = scheduleLaterOffsetMins,
+                onOffsetChange = { scheduleLaterOffsetMins = it },
+                durationMins = scheduleLaterDurationMins,
+                onDurationChange = { scheduleLaterDurationMins = it },
+                onDismiss = { scheduleLaterFor = null },
+                onResultNote = { actionNote = it },
+            )
         }
     }
 
@@ -365,7 +439,7 @@ private fun GuideChannelRow(
     windowStartMs: Long,
     windowEndMs: Long,
     nowMs: Long,
-    onPlayLive: () -> Unit,
+    onOpenOptions: () -> Unit,
     onRecord: (EpgListing) -> Unit,
 ) {
     val visible = remember(listings, windowStartMs, windowEndMs) {
@@ -382,11 +456,11 @@ private fun GuideChannelRow(
             .height(58.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Channel name — press to watch live
+        // Channel name — OK opens actions (Watch live, Guide, Record…)
         val gutterInteraction = remember { MutableInteractionSource() }
         val gutterFocused by gutterInteraction.collectIsFocusedAsState()
         Surface(
-            onClick = onPlayLive,
+            onClick = onOpenOptions,
             modifier = Modifier.width(ChannelGutterDp).height(58.dp),
             shape  = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
             colors = ClickableSurfaceDefaults.colors(
@@ -531,33 +605,37 @@ private val _epgSdf = ThreadLocal.withInitial {
 
 internal fun parseEpgMs(raw: String?): Long {
     if (raw == null) return 0L
+    val s = raw.trim()
+    if (s.isEmpty()) return 0L
     return try {
-        _epgSdf.get()!!.parse(raw.trim().take(14))?.time ?: 0L
-    } catch (_: Exception) { 0L }
+        when {
+            s.all { it.isDigit() } && s.length >= 14 ->
+                _epgSdf.get()!!.parse(s.take(14))?.time ?: 0L
+            s.all { it.isDigit() } -> {
+                val v = s.toLong()
+                if (v > 10_000_000_000L) v else v * 1000L
+            }
+            else -> 0L
+        }
+    } catch (_: Exception) {
+        0L
+    }
 }
 
 private fun formatMs(ms: Long): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 
 internal fun formatEpgTime(raw: String?): String {
-    if (raw == null) return "--:--"
-    return try {
-        val s = raw.trim()
-        "${s.substring(8, 10)}:${s.substring(10, 12)}"
-    } catch (_: Exception) { raw }
+    val ms = parseEpgMs(raw)
+    if (ms <= 0L) return "--:--"
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 }
 
 internal fun epgDurationMins(start: String?, stop: String?): Int {
-    if (start == null || stop == null) return 60
-    return try {
-        fun toMins(s: String): Long {
-            val h = s.substring(8, 10).toLong()
-            val m = s.substring(10, 12).toLong()
-            val d = s.substring(6, 8).toLong()
-            return d * 1440 + h * 60 + m
-        }
-        (toMins(stop) - toMins(start)).coerceAtLeast(30).toInt()
-    } catch (_: Exception) { 60 }
+    val a = parseEpgMs(start)
+    val b = parseEpgMs(stop)
+    if (a <= 0L || b <= a) return 60
+    return ((b - a) / 60_000L).toInt().coerceAtLeast(30)
 }
 
 internal fun schedulerStartTimeFromEpg(raw: String?): String {

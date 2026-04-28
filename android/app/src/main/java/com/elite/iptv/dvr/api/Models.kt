@@ -18,8 +18,8 @@ data class EpgListing(
     val title: String,
     val description: String?,
     val start: String?,
-    // XtreamCodes returns "end" in get_short_epg; some providers use "stop"
-    @SerializedName(value = "stop", alternate = ["end"]) val stop: String?,
+    /** Parsed from JSON `stop` or `end` via [EpgListingDeserializer]. */
+    val stop: String?,
 )
 
 data class EpgResponse(

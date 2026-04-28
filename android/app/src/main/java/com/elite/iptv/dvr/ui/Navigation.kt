@@ -61,9 +61,10 @@ fun EliteNavHost(viewModel: MainViewModel) {
 
         composable(Screen.GuideGrid.route) {
             EpgGuideScreen(
-                viewModel     = viewModel,
-                onChannelPlay = { id, name -> nav.navigate(Screen.Player.go(id, name)) },
-                onBack        = { nav.popBackStack() },
+                viewModel            = viewModel,
+                onWatchLive          = { id, name -> nav.navigate(Screen.Player.go(id, name)) },
+                onOpenChannelGuide    = { id, name -> nav.navigate(Screen.Guide.go(id, name)) },
+                onBack               = { nav.popBackStack() },
             )
         }
 

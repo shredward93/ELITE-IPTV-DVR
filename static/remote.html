@@ -971,12 +971,6 @@
       <strong id="backup-name-disp"></strong>
       <button onclick="clearBackup()">Clear</button>
     </div>
-    <div class="backup-chip">
-      <span class="backup-chip-label">Failover</span>
-      <input id="failover-secs-input" type="number" min="5" max="300" step="1" value="30" />
-      <span>s</span>
-      <button onclick="saveFailoverSecs()">Save</button>
-    </div>
     <div id="rec-banner" class="rec-banner">
       <span class="rec-dot"></span>
       <span class="rec-label">REC</span>
@@ -1049,6 +1043,7 @@
       <button class="tab" data-tab="recs">Recordings <span class="count" id="rec-count"></span></button>
       <button class="tab" data-tab="favs">❤ Channels <span class="count" id="fav-count"></span></button>
       <button class="tab" data-tab="log">Log</button>
+      <button class="tab" data-tab="failover">Settings</button>
     </nav>
   </header>
   <div id="search-results" style="padding:0 20px"></div>
@@ -1119,6 +1114,19 @@
         <span class="pane-meta">Diagnostic</span>
       </div>
       <div id="log-panel"></div>
+    </section>
+
+    <section id="pane-failover" class="pane">
+      <div class="pane-head">
+        <h2 class="pane-title">Recording Failover</h2>
+        <span class="pane-meta">Recorder resilience</span>
+      </div>
+      <div class="backup-chip" style="max-width:360px">
+        <span class="backup-chip-label">Switch Delay</span>
+        <input id="failover-secs-input" type="number" min="5" max="300" step="1" value="30" />
+        <span>s</span>
+        <button onclick="saveFailoverSecs()">Save</button>
+      </div>
     </section>
   </main>
 </div>

@@ -51,6 +51,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
+import com.elite.iptv.dvr.BuildConfig
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
@@ -258,6 +259,16 @@ fun ChannelBrowserScreen(
                 onResultNote = { actionNote = it },
             )
         }
+
+        Text(
+            text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            color = EliteColors.paperMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        )
     }
 }
 

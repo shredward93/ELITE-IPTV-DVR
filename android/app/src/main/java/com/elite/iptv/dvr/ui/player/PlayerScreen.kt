@@ -8,6 +8,7 @@ package com.elite.iptv.dvr.ui.player
  * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
 import android.net.Uri
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -43,7 +44,6 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
-import com.elite.iptv.dvr.BuildConfig
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.api.PreviewStartRequest
 import com.elite.iptv.dvr.api.PreviewStopRequest
@@ -65,6 +65,7 @@ fun PlayerScreen(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var showQualityBar by remember { mutableStateOf(false) }
 
     val player = remember {
         ExoPlayer.Builder(context)
@@ -154,17 +155,6 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isLoading, error) {
-        if (!isLoading && error == null) {
-            while (true) {
-                playerView?.let {
-                    if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
-                }
-                delay(750)
-            }
-        }
-    }
-
     BackHandler { onBack() }
 
     Box(
@@ -181,11 +171,16 @@ fun PlayerScreen(
                     setShowPreviousButton(false)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
-                    controllerAutoShow = false
+                    controllerAutoShow = true
                     controllerHideOnTouch = true
                     setControllerShowTimeoutMs(4_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
+                    setControllerVisibilityListener(
+                        PlayerView.ControllerVisibilityListener { visibility ->
+                            showQualityBar = visibility == View.VISIBLE
+                        },
+                    )
                 }.also { playerView = it }
             },
             modifier = Modifier.fillMaxSize(),
@@ -217,23 +212,16 @@ fun PlayerScreen(
             )
         }
 
-        WatchQualityBar(
-            current = viewModel.watchMode,
-            onSelect = viewModel::applyWatchMode,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 36.dp),
-        )
+        if (showQualityBar && !isLoading && error == null) {
+            WatchQualityBar(
+                current = viewModel.watchMode,
+                onSelect = viewModel::applyWatchMode,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 36.dp),
+            )
+        }
 
-        Text(
-            text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-            color = EliteColors.paperMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        )
     }
 }
 

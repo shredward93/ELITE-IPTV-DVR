@@ -104,6 +104,16 @@
     text-transform:uppercase; cursor:pointer;
   }
   .backup-chip button:hover{border-color:var(--paper-muted); color:var(--paper)}
+  .backup-chip input{
+    width:64px;
+    background:transparent;
+    border:1px solid var(--rule);
+    color:var(--paper);
+    border-radius:6px;
+    padding:4px 6px;
+    font-family:inherit;
+    font-size:11px;
+  }
 
   /* RECORDING BANNER */
   .rec-banner{
@@ -961,6 +971,12 @@
       <strong id="backup-name-disp"></strong>
       <button onclick="clearBackup()">Clear</button>
     </div>
+    <div class="backup-chip">
+      <span class="backup-chip-label">Failover</span>
+      <input id="failover-secs-input" type="number" min="5" max="300" step="1" value="30" />
+      <span>s</span>
+      <button onclick="saveFailoverSecs()">Save</button>
+    </div>
     <div id="rec-banner" class="rec-banner">
       <span class="rec-dot"></span>
       <span class="rec-label">REC</span>
@@ -1507,6 +1523,12 @@ function refreshStatus(){
     }else{
       banner.classList.remove('visible');
     }
+    if(d.recording_failover_secs){
+      const inp=document.getElementById('failover-secs-input');
+      if(inp && document.activeElement!==inp){
+        inp.value=d.recording_failover_secs;
+      }
+    }
   }).catch(()=>{});
 }
 
@@ -1828,6 +1850,23 @@ function setBackup(){
   }).then(r=>r.json()).then(d=>{refreshStatus();toast(d.message||'Backup set');}).catch(()=>toast('Error'));
 }
 function clearBackup(){fetch('/api/backup/clear',{method:'POST'}).then(()=>{refreshStatus();toast('Backup cleared');});}
+function saveFailoverSecs(){
+  const inp=document.getElementById('failover-secs-input');
+  const secs=parseInt(inp?.value||'0',10);
+  if(!Number.isFinite(secs) || secs<5 || secs>300){
+    toast('Failover seconds must be 5-300');
+    return;
+  }
+  fetch('/api/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({recording_failover_secs:secs}),
+  }).then(r=>r.json()).then(d=>{
+    if(d.error){toast(d.error);return;}
+    refreshStatus();
+    toast('Failover saved: '+secs+'s');
+  }).catch(()=>toast('Could not save failover setting'));
+}
 function stopJob(i, isQueued){
   const msg=isQueued?'Cancel this scheduled recording?':'Stop this recording?';
   if(!confirm(msg))return;

@@ -424,6 +424,11 @@ class IPTVRecorderApp(ctk.CTk):
                     pass
             if "schedule_file" in data and data["schedule_file"]:
                 config.SCHEDULES_FILE = data["schedule_file"]
+            if "recording_failover_secs" in data:
+                try:
+                    config.RECORDING_FAILOVER_SECS = max(5, int(data["recording_failover_secs"]))
+                except (ValueError, TypeError):
+                    pass
         except Exception:
             pass
 
@@ -509,6 +514,7 @@ class IPTVRecorderApp(ctk.CTk):
                     "dvr_max_hours":  config.DVR_MAX_HOURS,
                     "dvr_max_gb":     config.DVR_MAX_GB,
                     "schedule_file":  config.SCHEDULES_FILE,
+                    "recording_failover_secs": config.RECORDING_FAILOVER_SECS,
                 }, f, indent=2)
         except Exception:
             pass
@@ -587,6 +593,7 @@ class IPTVRecorderApp(ctk.CTk):
             get_recordings_dir_fn=lambda: self.output_dir,
             preview_start_fn=self.live_preview.start,
             preview_stop_fn=self.live_preview.stop,
+            get_settings_fn=self._web_get_settings,
         )
         try:
             url = start_web_server(ctx)
@@ -632,7 +639,13 @@ class IPTVRecorderApp(ctk.CTk):
         return {
             "status": self._status_text,
             "backup_name": self.backup_channel_name,
+            "recording_failover_secs": config.RECORDING_FAILOVER_SECS,
             "recordings": recordings,
+        }
+
+    def _web_get_settings(self):
+        return {
+            "recording_failover_secs": int(config.RECORDING_FAILOVER_SECS),
         }
 
     def _process_web_actions(self):
@@ -666,6 +679,14 @@ class IPTVRecorderApp(ctk.CTk):
             elif action["type"] == "backup_clear":
                 self._clear_backup_channel()
                 self._log("[Remote] Cleared backup channel")
+            elif action["type"] == "set_recording_failover_secs":
+                try:
+                    secs = max(5, int(action.get("value")))
+                    config.RECORDING_FAILOVER_SECS = secs
+                    self._save_settings()
+                    self._log(f"[Remote] Recording failover set to {secs}s")
+                except (TypeError, ValueError):
+                    self._log("[Remote] Invalid recording failover value ignored")
 
     def _web_schedule(self, action):
         try:

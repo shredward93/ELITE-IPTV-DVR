@@ -40,6 +40,10 @@ data class FavoriteRequest(
 
 data class MessageResponse(val message: String)
 
+data class RecordingSettings(
+    @SerializedName("recording_failover_secs") val recordingFailoverSecs: Int,
+)
+
 data class OkResponse(
     val ok: Boolean,
     val channel: String? = null,

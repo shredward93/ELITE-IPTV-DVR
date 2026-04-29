@@ -14,6 +14,12 @@ interface ApiService {
     @GET("api/info")
     suspend fun getInfo(): ServerInfo
 
+    @GET("api/settings")
+    suspend fun getSettings(): RecordingSettings
+
+    @POST("api/settings")
+    suspend fun updateSettings(@Body body: RecordingSettings): RecordingSettings
+
     // ── Channels ──────────────────────────────────────────────────────────────
 
     @GET("api/favorites")

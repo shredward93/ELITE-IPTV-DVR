@@ -8,6 +8,13 @@ import time
 import config
 
 
+def _failover_streak_secs() -> int:
+    try:
+        return max(5, int(getattr(config, "RECORDING_FAILOVER_SECS", 30)))
+    except (TypeError, ValueError):
+        return 30
+
+
 class RecordingJob:
     """Pure-data recording job. No UI widget references."""
 
@@ -223,15 +230,24 @@ def run_job(job):
 
             if fail_streak_start is None:
                 fail_streak_start = time.time()
-            elif (not on_backup and job.backup_channel_id
-                  and time.time() - fail_streak_start >= 120):
-                on_backup               = True
-                active_id               = job.backup_channel_id
-                job.active_channel_name = job.backup_channel_name
-                fail_streak_start       = None
-                job._pending_logs.append(
-                    f"Primary '{job.channel_name}' down >2 min — switching to backup '{job.backup_channel_name}'"
-                )
+            elif time.time() - fail_streak_start >= _failover_streak_secs():
+                failover_secs = _failover_streak_secs()
+                if not on_backup and job.backup_channel_id:
+                    on_backup               = True
+                    active_id               = job.backup_channel_id
+                    job.active_channel_name = job.backup_channel_name
+                    fail_streak_start       = None
+                    job._pending_logs.append(
+                        f"Primary '{job.channel_name}' unstable >{failover_secs}s — switching to backup '{job.backup_channel_name}'"
+                    )
+                elif on_backup:
+                    on_backup               = False
+                    active_id               = job.channel_id
+                    job.active_channel_name = job.channel_name
+                    fail_streak_start       = None
+                    job._pending_logs.append(
+                        f"Backup '{job.backup_channel_name or 'channel'}' unstable >{failover_secs}s — switching back to primary '{job.channel_name}'"
+                    )
 
             time.sleep(4)
         else:

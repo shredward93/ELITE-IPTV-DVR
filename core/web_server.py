@@ -433,6 +433,7 @@ class WebContext:
         get_recordings_dir_fn=None, # () -> str | None
         preview_start_fn=None,      # (channel_id: str) -> dict — Live DVR web remote
         preview_stop_fn=None,       # (preview_id: int) -> dict
+        get_settings_fn=None,       # () -> dict
     ):
         self.get_status          = get_status_fn
         self.get_channels        = get_channels_fn
@@ -445,6 +446,7 @@ class WebContext:
         self.get_recordings_dir  = get_recordings_dir_fn
         self.preview_start       = preview_start_fn
         self.preview_stop        = preview_stop_fn
+        self.get_settings        = get_settings_fn
 
 
 class RemoteHandler(BaseHTTPRequestHandler):
@@ -589,6 +591,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/log":
             self._json({"entries": self.ctx.get_log()})
+
+        elif path == "/api/settings":
+            if self.ctx.get_settings:
+                self._json(self.ctx.get_settings())
+            else:
+                self._json({"recording_failover_secs": int(getattr(config, "RECORDING_FAILOVER_SECS", 30))})
 
         # ── Android TV: discovery + info ─────────────────────────────────────
         elif path == "/api/info":
@@ -879,6 +887,19 @@ class RemoteHandler(BaseHTTPRequestHandler):
         elif path == "/api/backup/clear":
             self.ctx.action_queue.put({"type": "backup_clear"})
             self._json({"message": "Backup channel cleared"})
+
+        elif path == "/api/settings":
+            secs = body.get("recording_failover_secs")
+            try:
+                secs = int(secs)
+            except (TypeError, ValueError):
+                self._error(400, "recording_failover_secs must be an integer")
+                return
+            if secs < 5 or secs > 300:
+                self._error(400, "recording_failover_secs must be between 5 and 300")
+                return
+            self.ctx.action_queue.put({"type": "set_recording_failover_secs", "value": secs})
+            self._json({"ok": True, "recording_failover_secs": secs})
 
         # ── Android TV: record now (alias for schedule NOW) ───────────────────
         elif path == "/api/record":

@@ -15,6 +15,7 @@ import com.elite.iptv.dvr.api.DvrSegment
 import com.elite.iptv.dvr.api.DvrStartRequest
 import com.elite.iptv.dvr.api.EpgListing
 import com.elite.iptv.dvr.api.FavoriteRequest
+import com.elite.iptv.dvr.api.RecordingSettings
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
 import kotlinx.coroutines.delay
@@ -65,6 +66,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
+    var recordingFailoverSecs by mutableStateOf(30)
+        private set
+
     /** Same modes as `static/remote.html` watch bar (`eliteWatchMode`). */
     var watchMode by mutableStateOf(
         prefs.getString("watch_mode", WATCH_LIVE_DVR) ?: WATCH_LIVE_DVR,
@@ -103,6 +107,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun testConnection(): ServerInfo = ApiClient.service.getInfo()
+
+    suspend fun loadRecordingSettings() {
+        val s = ApiClient.service.getSettings()
+        recordingFailoverSecs = s.recordingFailoverSecs
+    }
+
+    suspend fun saveRecordingFailoverSecs(secs: Int) {
+        val clamped = secs.coerceIn(5, 300)
+        val updated = ApiClient.service.updateSettings(RecordingSettings(clamped))
+        recordingFailoverSecs = updated.recordingFailoverSecs
+    }
 
     // ── Channels ──────────────────────────────────────────────────────────────
 

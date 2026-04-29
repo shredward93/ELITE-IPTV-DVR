@@ -44,6 +44,7 @@ TRIMMED_XMLTV_PATH = os.getenv("TRIMMED_XMLTV_PATH", os.path.join(_APP_DIR, "xml
 DVR_BUFFER_DIR = os.path.join(_APP_DIR, "dvr_buffer")
 DVR_MAX_HOURS  = 6
 DVR_MAX_GB     = 50
+RECORDING_FAILOVER_SECS = int(os.getenv("RECORDING_FAILOVER_SECS", "30"))
 
 # Mutable credential globals — populated by core.credentials.load_credentials()
 SERVER_URL            = ""

@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,7 +48,15 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
     var status by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
+    var failoverSecsText by remember { mutableStateOf(viewModel.recordingFailoverSecs.toString()) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(viewModel.pcUrl) {
+        if (viewModel.pcUrl.isNotBlank()) {
+            runCatching { viewModel.loadRecordingSettings() }
+                .onSuccess { failoverSecsText = viewModel.recordingFailoverSecs.toString() }
+        }
+    }
 
     fun connect() {
         if (url.isBlank() || isConnecting) return
@@ -155,6 +164,61 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                     )
                 } else {
                     Text("Connect", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            if (viewModel.pcUrl.isNotBlank()) {
+                Spacer(Modifier.height(20.dp))
+                OutlinedTextField(
+                    value = failoverSecsText,
+                    onValueChange = { failoverSecsText = it.filter(Char::isDigit).take(3) },
+                    label = { Text("Recorder failover seconds (5-300)", fontSize = 14.sp, color = EliteColors.paperMuted) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = EliteColors.signal,
+                        unfocusedBorderColor = EliteColors.rule,
+                        focusedTextColor = EliteColors.paper,
+                        unfocusedTextColor = EliteColors.paper,
+                        cursorColor = EliteColors.signal,
+                        focusedLabelColor = EliteColors.signal,
+                        unfocusedLabelColor = EliteColors.paperMuted,
+                    ),
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val secs = failoverSecsText.toIntOrNull()
+                            if (secs == null || secs !in 5..300) {
+                                status = "Failover seconds must be 5-300"
+                                isError = true
+                                return@launch
+                            }
+                            runCatching { viewModel.saveRecordingFailoverSecs(secs) }
+                                .onSuccess {
+                                    failoverSecsText = viewModel.recordingFailoverSecs.toString()
+                                    status = "Failover saved: ${viewModel.recordingFailoverSecs}s"
+                                    isError = false
+                                }
+                                .onFailure {
+                                    status = "Could not save failover setting"
+                                    isError = true
+                                }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    colors = ButtonDefaults.colors(
+                        containerColor = EliteColors.surface3,
+                        contentColor = EliteColors.paper,
+                        focusedContainerColor = EliteColors.signal,
+                        focusedContentColor = EliteColors.ink,
+                    ),
+                ) {
+                    Text("Save Recorder Setting", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 

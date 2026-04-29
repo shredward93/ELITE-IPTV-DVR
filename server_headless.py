@@ -52,6 +52,30 @@ class HeadlessServer:
 
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
+        self._load_settings()
+
+    def _load_settings(self):
+        try:
+            with open(config.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if "recording_failover_secs" in data:
+                config.RECORDING_FAILOVER_SECS = max(5, int(data["recording_failover_secs"]))
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        try:
+            data = {}
+            try:
+                with open(config.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+            data["recording_failover_secs"] = int(config.RECORDING_FAILOVER_SECS)
+            with open(config.SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            self._log(f"Could not save settings: {e}")
 
     def _log(self, message: str):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -146,7 +170,11 @@ class HeadlessServer:
             "recordings": recordings,
             "status": f"Ready — {len(self.all_channel_names):,} channels" if self._channels_loaded else "Loading channels…",
             "backup_name": self.backup_channel_name or "",
+            "recording_failover_secs": int(config.RECORDING_FAILOVER_SECS),
         }
+
+    def _web_get_settings(self) -> dict:
+        return {"recording_failover_secs": int(config.RECORDING_FAILOVER_SECS)}
 
     def _web_get_channels(self, q: str) -> list[dict]:
         """Search channels for web API."""
@@ -295,6 +323,14 @@ class HeadlessServer:
                 self.backup_channel_id = None
                 self.backup_channel_name = None
                 self._log("[Remote] Cleared backup channel")
+            elif action["type"] == "set_recording_failover_secs":
+                try:
+                    secs = max(5, int(action.get("value")))
+                    config.RECORDING_FAILOVER_SECS = secs
+                    self._save_settings()
+                    self._log(f"[Remote] Recording failover set to {secs}s")
+                except (TypeError, ValueError):
+                    self._log("[Remote] Invalid recording failover value ignored")
 
     def _web_schedule(self, action: dict):
         """Schedule a recording from web API."""
@@ -342,6 +378,7 @@ class HeadlessServer:
             get_recordings_dir_fn=self._web_get_recordings_dir,
             preview_start_fn=self.live_preview.start,
             preview_stop_fn=self.live_preview.stop,
+            get_settings_fn=self._web_get_settings,
         )
         url = start_web_server(ctx)
         self._log(f"Web server started at {url}")

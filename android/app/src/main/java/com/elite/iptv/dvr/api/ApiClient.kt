@@ -42,6 +42,17 @@ object ApiClient {
     fun dvrPlaylistUrl(baseUrl: String): String =
         "${baseUrl.trimEnd('/')}/dvr/playlist.m3u8"
 
+    /** Join PC base URL with a path like `/recordings/live/…` or `api/stream/live?…`. */
+    fun resolvePlaybackUrl(baseUrl: String, pathOrAbsolute: String): String {
+        val p = pathOrAbsolute.trim()
+        if (p.startsWith("http://", ignoreCase = true) || p.startsWith("https://", ignoreCase = true)) {
+            return p
+        }
+        val base = baseUrl.trimEnd('/')
+        val path = if (p.startsWith("/")) p else "/$p"
+        return base + path
+    }
+
     /** Completed file URL — same path model as the webapp’s recording playback. */
     fun recordingUrl(baseUrl: String, filename: String): String =
         "${baseUrl.trimEnd('/')}/recordings/$filename"

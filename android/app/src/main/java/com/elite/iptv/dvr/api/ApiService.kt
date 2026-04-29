@@ -68,6 +68,12 @@ interface ApiService {
     @POST("dvr/stop")
     suspend fun stopDvr(): Response<Unit>
 
+    @POST("api/preview/start")
+    suspend fun startPreview(@Body body: PreviewStartRequest): PreviewStartResponse
+
+    @POST("api/preview/stop")
+    suspend fun stopPreview(@Body body: PreviewStopRequest): OkResponse
+
     @GET("dvr/segments")
     suspend fun getDvrSegments(): List<DvrSegment>
 

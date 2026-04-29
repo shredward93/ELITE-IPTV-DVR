@@ -50,6 +50,22 @@ data class DvrStartRequest(
     @SerializedName("channel_name") val channelName: String,
 )
 
+/** Web remote Live DVR — same contract as `POST /api/preview/start` in `static/remote.html`. */
+data class PreviewStartRequest(
+    @SerializedName("channel_id") val channelId: String,
+)
+
+data class PreviewStartResponse(
+    val ok: Boolean = false,
+    val error: String? = null,
+    @SerializedName("preview_id") val previewId: Int? = null,
+    @SerializedName("live_hls_url") val liveHlsUrl: String? = null,
+)
+
+data class PreviewStopRequest(
+    @SerializedName("preview_id") val previewId: Int,
+)
+
 data class DvrSegment(
     val name: String,
     @SerializedName("size_bytes") val sizeBytes: Long,

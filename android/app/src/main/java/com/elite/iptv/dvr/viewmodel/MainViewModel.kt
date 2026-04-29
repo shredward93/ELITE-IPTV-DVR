@@ -17,7 +17,6 @@ import com.elite.iptv.dvr.api.EpgListing
 import com.elite.iptv.dvr.api.FavoriteRequest
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
-import com.elite.iptv.dvr.ui.guide.GuideConstants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -26,6 +25,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val GUIDE_EPG_CHUNK = 8
         private const val GUIDE_EPG_LISTING_LIMIT = 12
+        const val WATCH_LIVE_DVR = "live_dvr"
+        const val WATCH_ORIGINAL = "original"
+        const val WATCH_DATA_SAVER = "data_saver"
     }
 
     private val prefs = application.getSharedPreferences("elite_dvr", Context.MODE_PRIVATE)
@@ -62,6 +64,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var errorMessage by mutableStateOf<String?>(null)
         private set
+
+    /** Same modes as `static/remote.html` watch bar (`eliteWatchMode`). */
+    var watchMode by mutableStateOf(
+        prefs.getString("watch_mode", WATCH_LIVE_DVR) ?: WATCH_LIVE_DVR,
+    )
+        private set
+
+    fun applyWatchMode(mode: String) {
+        val m = when (mode) {
+            WATCH_LIVE_DVR, WATCH_ORIGINAL, WATCH_DATA_SAVER -> mode
+            else -> WATCH_LIVE_DVR
+        }
+        if (m == watchMode) return
+        watchMode = m
+        prefs.edit().putString("watch_mode", m).apply()
+    }
 
     init {
         if (pcUrl.isNotEmpty()) {
@@ -114,15 +132,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun loadEpgForChannel(channelId: String) {
         viewModelScope.launch {
             val gen = ++epgRequestGeneration
-            val (ws, we) = GuideConstants.windowBounds()
+            // Window 0,0 = no server-side filter (matches shipped `android-tv-apk`); UI still clips to timeline.
             runCatching {
                 var listings: List<EpgListing> = emptyList()
                 for (attempt in 0 until 4) {
                     listings = ApiClient.service.getEpg(
                         channelId = channelId,
                         limit = 48,
-                        windowStartMs = ws,
-                        windowEndMs = we,
+                        windowStartMs = 0L,
+                        windowEndMs = 0L,
                     ).listings
                     if (listings.isNotEmpty() || attempt == 3) break
                     delay(1500)
@@ -162,17 +180,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Loads EPG for one chunk of channels (same time window as [GuideConstants]).
-     * Merge into [guideEpg] so the UI can fill in progressively.
+     * Loads EPG for one chunk of channels. Window 0,0 skips server-side filtering so listings
+     * are not dropped when timestamps are odd; [EpgGuideScreen] still filters to the visible window.
      */
     suspend fun loadGuideEpgChunk(channelIds: List<String>) {
         if (channelIds.isEmpty()) return
-        val (ws, we) = GuideConstants.windowBounds()
         val result = ApiClient.service.getMultiEpg(
             channelIds = channelIds.joinToString(","),
             limit = GUIDE_EPG_LISTING_LIMIT,
-            windowStartMs = ws,
-            windowEndMs = we,
+            windowStartMs = 0L,
+            windowEndMs = 0L,
         )
         val patch = result.associate { it.channelId to it.listings }
         guideEpg = guideEpg + patch

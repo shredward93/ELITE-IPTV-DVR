@@ -1,17 +1,24 @@
+@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+
 package com.elite.iptv.dvr.ui.player
 
 /**
- * Live playback uses the **same** server URLs and HLS DVR contract as the mobile webapp
- * (`static/remote.html`: hls.js → server playlist/segments). The PC normalizes what each
- * channel delivers; do **not** add per-channel codec or audio branching here — keep one
- * ExoPlayer path and let Media3 + the manifest handle it (mirrors proven web behavior).
+ * Live playback mirrors `static/remote.html` watch modes: Live DVR (`/api/preview/start` + HLS),
+ * Original (`/api/stream/live`), Data saver (`/api/stream/mobile.m3u8?profile=data_saver`).
+ * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
@@ -33,11 +40,19 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.tv.material3.Border
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import com.elite.iptv.dvr.BuildConfig
 import com.elite.iptv.dvr.api.ApiClient
+import com.elite.iptv.dvr.api.PreviewStartRequest
+import com.elite.iptv.dvr.api.PreviewStopRequest
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.viewmodel.MainViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import java.net.URLEncoder
 
 @Composable
 fun PlayerScreen(
@@ -76,60 +91,69 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(channelId) {
+    LaunchedEffect(channelId, viewModel.watchMode) {
+        var previewToStop: Int? = null
         isLoading = true
         error = null
-
         try {
-            viewModel.startDvr(channelId, channelName)
+            player.stop()
+            player.clearMediaItems()
+
+            when (viewModel.watchMode) {
+                MainViewModel.WATCH_LIVE_DVR -> {
+                    val res = ApiClient.service.startPreview(PreviewStartRequest(channelId))
+                    if (!res.ok) {
+                        error = res.error ?: "Live DVR failed"
+                        isLoading = false
+                        return@LaunchedEffect
+                    }
+                    val pid = res.previewId
+                    val path = res.liveHlsUrl
+                    if (pid == null || path.isNullOrBlank()) {
+                        error = "Live DVR: invalid response"
+                        isLoading = false
+                        return@LaunchedEffect
+                    }
+                    previewToStop = pid
+                    val uri = Uri.parse(ApiClient.resolvePlaybackUrl(viewModel.pcUrl, path))
+                    player.setMediaItem(liveHlsMediaItem(uri))
+                    player.prepare()
+                }
+                MainViewModel.WATCH_ORIGINAL -> {
+                    val enc = URLEncoder.encode(channelId, "UTF-8")
+                    val uri = Uri.parse(
+                        ApiClient.resolvePlaybackUrl(viewModel.pcUrl, "api/stream/live?channel_id=$enc"),
+                    )
+                    player.setMediaItem(MediaItem.Builder().setUri(uri).build())
+                    player.prepare()
+                }
+                MainViewModel.WATCH_DATA_SAVER -> {
+                    val enc = URLEncoder.encode(channelId, "UTF-8")
+                    val uri = Uri.parse(
+                        ApiClient.resolvePlaybackUrl(
+                            viewModel.pcUrl,
+                            "api/stream/mobile.m3u8?channel_id=$enc&profile=data_saver",
+                        ),
+                    )
+                    player.setMediaItem(liveHlsMediaItem(uri))
+                    player.prepare()
+                }
+            }
+            isLoading = false
+            awaitCancellation()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            error = "Failed to start DVR: ${e.message}"
+            error = e.message ?: "Playback failed"
             isLoading = false
-            return@LaunchedEffect
+        } finally {
+            previewToStop?.let { pid ->
+                runCatching { ApiClient.service.stopPreview(PreviewStopRequest(pid)) }
+            }
+            viewModel.stopDvrAsync()
         }
-
-        // Wait for FFmpeg to produce at least 2 segments so the HLS manifest
-        // is populated and ExoPlayer has something to start playing immediately.
-        var ready = false
-        repeat(25) {
-            delay(800)
-            val segs = runCatching { viewModel.getDvrSegments() }.getOrElse { emptyList() }
-            if (segs.size >= 2) { ready = true; return@repeat }
-        }
-
-        if (!ready) {
-            error = "No stream data received. Is the PC running?"
-            isLoading = false
-            return@LaunchedEffect
-        }
-
-        // Single HLS manifest URL. media3-exoplayer-hls auto-detects .m3u8 and
-        // builds an HlsMediaSource; LiveConfiguration tells it to aim for the
-        // live edge with a 6 s target offset and mild speed-ramp to catch up.
-        val mediaItem = MediaItem.Builder()
-            .setUri(ApiClient.dvrPlaylistUrl(viewModel.pcUrl))
-            .setLiveConfiguration(
-                MediaItem.LiveConfiguration.Builder()
-                    // Stay 20 s behind live edge — segments are always ready,
-                    // no chance of hitting the edge and stalling.
-                    .setTargetOffsetMs(20_000)
-                    .setMinOffsetMs(10_000)
-                    .setMaxOffsetMs(40_000)
-                    // No speed ramp — constant 1× playback, no audio pitch shifts.
-                    .setMinPlaybackSpeed(1.0f)
-                    .setMaxPlaybackSpeed(1.0f)
-                    .build()
-            )
-            .build()
-
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        isLoading = false
     }
 
-    // Keep nudging focus back to PlayerView so D-pad events (OK / arrows) always
-    // reach the controller. `update` callback alone isn't enough — focus can be
-    // stolen on surface updates and never recovered.
     LaunchedEffect(isLoading, error) {
         if (!isLoading && error == null) {
             while (true) {
@@ -174,7 +198,7 @@ fun PlayerScreen(
             ) {
                 CircularProgressIndicator(color = EliteColors.signal)
                 Text(
-                    text = "Starting DVR buffer for $channelName…",
+                    text = "Loading $channelName…",
                     color = EliteColors.paper,
                     fontSize = 18.sp,
                     modifier = Modifier.padding(top = 16.dp),
@@ -193,6 +217,14 @@ fun PlayerScreen(
             )
         }
 
+        WatchQualityBar(
+            current = viewModel.watchMode,
+            onSelect = viewModel::applyWatchMode,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 36.dp),
+        )
+
         Text(
             text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             color = EliteColors.paperMuted,
@@ -202,5 +234,94 @@ fun PlayerScreen(
                 .align(Alignment.BottomEnd)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         )
+    }
+}
+
+private fun liveHlsMediaItem(uri: Uri): MediaItem =
+    MediaItem.Builder()
+        .setUri(uri)
+        .setLiveConfiguration(
+            MediaItem.LiveConfiguration.Builder()
+                .setTargetOffsetMs(20_000)
+                .setMinOffsetMs(10_000)
+                .setMaxOffsetMs(40_000)
+                .setMinPlaybackSpeed(1.0f)
+                .setMaxPlaybackSpeed(1.0f)
+                .build(),
+        )
+        .build()
+
+@Composable
+private fun WatchQualityBar(
+    current: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "QUALITY",
+            color = EliteColors.paperMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.padding(end = 4.dp),
+        )
+        QualityModeButton(
+            label = "Live DVR",
+            mode = MainViewModel.WATCH_LIVE_DVR,
+            current = current,
+            onSelect = onSelect,
+        )
+        QualityModeButton(
+            label = "Original",
+            mode = MainViewModel.WATCH_ORIGINAL,
+            current = current,
+            onSelect = onSelect,
+        )
+        QualityModeButton(
+            label = "Data saver",
+            mode = MainViewModel.WATCH_DATA_SAVER,
+            current = current,
+            onSelect = onSelect,
+        )
+    }
+}
+
+@Composable
+private fun QualityModeButton(
+    label: String,
+    mode: String,
+    current: String,
+    onSelect: (String) -> Unit,
+) {
+    val active = current == mode
+    Button(
+        onClick = { onSelect(mode) },
+        modifier = Modifier.padding(0.dp),
+        scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.04f, pressedScale = 1f),
+        border = ButtonDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(8.dp),
+            ),
+        ),
+        colors = ButtonDefaults.colors(
+            containerColor = if (active) EliteColors.signal else EliteColors.surface3,
+            contentColor = if (active) EliteColors.ink else EliteColors.paper,
+            focusedContainerColor = EliteColors.signal,
+            focusedContentColor = EliteColors.ink,
+            pressedContainerColor = EliteColors.surface2,
+            pressedContentColor = EliteColors.paper,
+        ),
+    ) {
+        Text(label, fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)
     }
 }

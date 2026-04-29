@@ -1490,8 +1490,11 @@ function openGuideSchedule(channelId, channelName, startValue, stopValue){
 
 /* ═══ STATUS ═══ */
 function refreshStatus(){
-  fetch('/api/status').then(r=>r.json()).then(d=>{
-    document.getElementById('srv-status').textContent=d.status;
+  fetch('/api/status').then(r=>{
+    if(!r.ok) throw new Error('status '+r.status);
+    return r.json();
+  }).then(d=>{
+    document.getElementById('srv-status').textContent=d.status || d.error || 'Connected';
     const bDisp=document.getElementById('backup-status');
     if(d.backup_name){
       document.getElementById('backup-name-disp').textContent=d.backup_name;
@@ -1503,9 +1506,10 @@ function refreshStatus(){
     // The detailed recordings pane (active + completed files) is owned by refreshRecordings().
     const recCountEl=document.getElementById('rec-count');
     const led=document.getElementById('status-led');
-    const activeRecs=d.recordings.filter(r=>r.status==='recording'&&r.stoppable);
+    const recordings=Array.isArray(d.recordings)?d.recordings:[];
+    const activeRecs=recordings.filter(r=>r.status==='recording'&&r.stoppable);
     const anyRecording=activeRecs.length>0;
-    const activeOrWaiting=d.recordings.filter(r=>r.stoppable).length;
+    const activeOrWaiting=recordings.filter(r=>r.stoppable).length;
     if(activeOrWaiting){
       recCountEl.textContent=activeOrWaiting;
       recCountEl.className=anyRecording?'count live':'count';
@@ -1521,7 +1525,7 @@ function refreshStatus(){
     if(anyRecording){
       banner.classList.add('visible');
       bannerName.textContent=activeRecs[0].name;
-      bannerStop.dataset.index=d.recordings.findIndex(r=>r===activeRecs[0]);
+      bannerStop.dataset.index=recordings.findIndex(r=>r===activeRecs[0]);
       if(activeRecs.length>1){
         bannerMore.textContent=`+${activeRecs.length-1} more`;
         bannerMore.style.display='inline';
@@ -1537,7 +1541,10 @@ function refreshStatus(){
         inp.value=d.recording_failover_secs;
       }
     }
-  }).catch(()=>{});
+  }).catch(()=>{
+    const statusEl=document.getElementById('srv-status');
+    if(statusEl) statusEl.textContent='Status unavailable';
+  });
 }
 
 /* ═══ FAVORITES ═══ */

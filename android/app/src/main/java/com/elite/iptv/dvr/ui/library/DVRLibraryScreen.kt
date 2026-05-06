@@ -50,8 +50,8 @@ import androidx.tv.material3.Surface
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.api.ActiveRecording
 import com.elite.iptv.dvr.api.CompletedRecording
-import com.elite.iptv.dvr.ui.player.TV_SCRUB_STEP_MS
-import com.elite.iptv.dvr.ui.player.configureTiviMateStylePlayheadScrubbing
+import com.elite.iptv.dvr.ui.player.applyTvSeekIncrements
+import com.elite.iptv.dvr.ui.player.applyTvTimeBarDpadIncrements
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
@@ -72,8 +72,7 @@ fun DVRLibraryScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
-            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS)
-            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS)
+            .applyTvSeekIncrements()
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(15_000, 60_000, 2_000, 5_000)
@@ -130,8 +129,10 @@ fun DVRLibraryScreen(
                         setControllerShowTimeoutMs(5_000)
                         isFocusable = true
                         isFocusableInTouchMode = true
-                        configureTiviMateStylePlayheadScrubbing()
-                    }.also { libraryPlayerView = it }
+                    }.also { v ->
+                        libraryPlayerView = v
+                        v.applyTvTimeBarDpadIncrements()
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
             )

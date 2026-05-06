@@ -59,8 +59,7 @@ fun PlayerScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
-            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS)
-            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS)
+            .applyTvSeekIncrements()
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
@@ -199,8 +198,10 @@ fun PlayerScreen(
                     setControllerShowTimeoutMs(5_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
-                    configureTiviMateStylePlayheadScrubbing()
-                }.also { playerView = it }
+                }.also { v ->
+                    playerView = v
+                    v.applyTvTimeBarDpadIncrements()
+                }
             },
             modifier = Modifier.fillMaxSize(),
         )

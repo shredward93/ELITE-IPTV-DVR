@@ -32,8 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.net.Uri
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.lazy.LazyColumn
@@ -65,24 +67,39 @@ fun DVRLibraryScreen(
     // Inline player state
     val context = LocalContext.current
     var playingUrl by remember { mutableStateOf<String?>(null) }
-    var startFromBeginning by remember { mutableStateOf(false) }
-    val player = remember { ExoPlayer.Builder(context).build().apply { playWhenReady = true } }
-    LaunchedEffect(playingUrl, startFromBeginning) {
+    var isLiveRecording by remember { mutableStateOf(false) }
+    val player = remember {
+        ExoPlayer.Builder(context)
+            .setAudioAttributes(AudioAttributes.DEFAULT, true)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(30_000)
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(15_000, 60_000, 2_000, 5_000)
+                    .build()
+            )
+            .build()
+            .apply { playWhenReady = true }
+    }
+    LaunchedEffect(playingUrl) {
         val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
-        player.setMediaItem(MediaItem.fromUri(url))
-        player.prepare()
-        if (startFromBeginning) {
-            val listener = object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) {
-                        // "Now Recording" rows should open from the buffer start, not live edge.
-                        player.seekTo(0L)
-                        player.removeListener(this)
-                    }
-                }
-            }
-            player.addListener(listener)
+        player.stop()
+        player.clearMediaItems()
+        val mediaItem = if (isLiveRecording) {
+            // HLS event playlist — seekable from position 0, not a live edge stream.
+            MediaItem.Builder()
+                .setUri(Uri.parse(url))
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(Long.MAX_VALUE) // don't seek to live edge
+                        .build()
+                )
+                .build()
+        } else {
+            MediaItem.fromUri(url)
         }
+        player.setMediaItem(mediaItem, /* startPositionMs= */ 0L)
+        player.prepare()
     }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.release() } }
 
@@ -169,7 +186,7 @@ fun DVRLibraryScreen(
                 }
                 items(viewModel.activeRecordings, key = { "active-${it.index}-${it.channelName}" }) { rec ->
                     ActiveRecordingRow(rec) { livePath ->
-                        startFromBeginning = true
+                        isLiveRecording = true
                         playingUrl = ApiClient.resolvePlaybackUrl(viewModel.pcUrl, livePath)
                     }
                 }
@@ -185,7 +202,7 @@ fun DVRLibraryScreen(
             }
             items(viewModel.completedRecordings, key = { it.filename }) { rec ->
                 RecordingRow(rec) {
-                    startFromBeginning = false
+                    isLiveRecording = false
                     playingUrl = ApiClient.recordingUrl(viewModel.pcUrl, rec.filename)
                 }
             }

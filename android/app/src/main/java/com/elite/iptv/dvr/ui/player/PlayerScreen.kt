@@ -8,11 +8,9 @@ package com.elite.iptv.dvr.ui.player
  * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
 import android.net.Uri
-import android.view.View
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +60,8 @@ fun PlayerScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(30_000)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
@@ -153,9 +153,11 @@ fun PlayerScreen(
 
     BackHandler { onBack() }
 
-    // Keep focus pinned on PlayerView so remote D-pad controls stay consistent.
+    // Keep focus pinned on PlayerView so remote D-pad / OK / FF / RW reach controls.
     LaunchedEffect(isLoading, error) {
         if (!isLoading && error == null) {
+            // Show controls briefly on start so user knows they're available.
+            playerView?.showController()
             while (true) {
                 playerView?.let {
                     if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
@@ -175,15 +177,41 @@ fun PlayerScreen(
                 PlayerView(ctx).apply {
                     this.player = player
                     useController = true
+                    setShowRewindButton(true)
+                    setShowFastForwardButton(true)
                     setShowNextButton(false)
                     setShowPreviousButton(false)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
-                    controllerAutoShow = false
+                    controllerAutoShow = true
                     controllerHideOnTouch = true
-                    setControllerShowTimeoutMs(4_000)
+                    setControllerShowTimeoutMs(5_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
+                    // OK / DPAD_CENTER toggles the controller; FF / RW also reveal it.
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_CENTER,
+                            KeyEvent.KEYCODE_ENTER -> {
+                                if (isControllerFullyVisible) hideController() else showController()
+                                true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                                player.seekBack(); showController(); true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                                player.seekForward(); showController(); true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_SPACE -> {
+                                if (player.isPlaying) player.pause() else player.play()
+                                showController()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                 }.also { playerView = it }
             },
             modifier = Modifier.fillMaxSize(),

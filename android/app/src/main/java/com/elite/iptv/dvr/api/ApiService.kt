@@ -85,9 +85,4 @@ interface ApiService {
 
     @GET("dvr/status")
     suspend fun getDvrStatus(): DvrStatus
-
-    // ── Completed recording files ─────────────────────────────────────────────
-
-    @GET("recordings")
-    suspend fun getCompletedRecordings(): List<CompletedRecording>
 }

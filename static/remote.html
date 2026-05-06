@@ -115,13 +115,16 @@
     font-size:11px;
   }
 
-  /* RECORDING BANNER */
+  /* RECORDING BANNER — full-bleed strip at top of sticky header */
   .rec-banner{
     display:none; align-items:center; gap:10px;
-    margin-top:10px; padding:9px 12px;
-    background:rgba(255,46,77,.12);
-    border:1px solid rgba(255,46,77,.35);
-    border-radius:10px;
+    margin:-14px -20px 12px;
+    padding:10px 20px;
+    background:linear-gradient(180deg, rgba(255,46,77,.32) 0%, rgba(255,46,77,.09) 55%, rgba(18,16,12,.4) 100%);
+    border:none;
+    border-bottom:1px solid rgba(255,46,77,.5);
+    border-radius:0;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
   }
   .rec-banner.visible{display:flex}
   .rec-dot{
@@ -958,6 +961,13 @@
 <div class="app">
 
   <header class="topbar">
+    <div id="rec-banner" class="rec-banner" aria-live="polite">
+      <span class="rec-dot"></span>
+      <span class="rec-label">REC</span>
+      <span class="rec-channel" id="rec-banner-name"></span>
+      <button type="button" class="rec-stop" id="rec-banner-stop" onclick="stopJobFromBanner()">■ Stop</button>
+      <span class="rec-more" id="rec-banner-more" style="display:none" onclick="switchTab('recs')"></span>
+    </div>
     <div class="brand">
       <h1 class="brand-title">ELITE<em>.dvr</em></h1>
       <span class="brand-mark">Control</span>
@@ -970,13 +980,6 @@
       <span class="backup-chip-label">Backup</span>
       <strong id="backup-name-disp"></strong>
       <button onclick="clearBackup()">Clear</button>
-    </div>
-    <div id="rec-banner" class="rec-banner">
-      <span class="rec-dot"></span>
-      <span class="rec-label">REC</span>
-      <span class="rec-channel" id="rec-banner-name"></span>
-      <button class="rec-stop" id="rec-banner-stop" onclick="stopJobFromBanner()">■ Stop</button>
-      <span class="rec-more" id="rec-banner-more" style="display:none" onclick="switchTab('recs')"></span>
     </div>
     <div id="topbar-player" style="display:none">
       <div id="channel-inline-player" class="rec-inline-player paused">
@@ -1489,6 +1492,74 @@ function openGuideSchedule(channelId, channelName, startValue, stopValue){
 }
 
 /* ═══ STATUS ═══ */
+let __cachedStatusRecordings = [];
+let __lastApiActive = [];
+
+/** Index passed to /api/stop is position among waiting+recording jobs (see ui/app.py _process_web_actions). */
+function stopIndexAmongActiveJobs(recordingsArr, entry){
+  if(!entry || !Array.isArray(recordingsArr)) return 0;
+  let ai = 0;
+  for(const r of recordingsArr){
+    if(r.status !== 'waiting' && r.status !== 'recording') continue;
+    if(r === entry) return ai;
+    ai++;
+  }
+  return 0;
+}
+
+function pickRecordingBannerState(statusRecs, apiActive){
+  const sr = Array.isArray(statusRecs) ? statusRecs : [];
+  const aa = Array.isArray(apiActive) ? apiActive : [];
+  const statusRecording = sr.filter(r=>r.status === 'recording' && r.stoppable !== false);
+  const apiRecording = aa.filter(r=>r.status === 'recording');
+  const show = statusRecording.length > 0 || apiRecording.length > 0;
+  if(!show){
+    return {show:false, name:'', stopIdx:0, extra:0};
+  }
+  if(statusRecording.length){
+    const p = statusRecording[0];
+    return {
+      show:true,
+      name: p.name || p.channel_name || '',
+      stopIdx: stopIndexAmongActiveJobs(sr, p),
+      extra: statusRecording.length - 1,
+    };
+  }
+  const p = apiRecording[0];
+  let stopIdx = aa.findIndex(j=>j === p);
+  if(stopIdx < 0) stopIdx = 0;
+  return {
+    show:true,
+    name: p.channel_name || p.name || '',
+    stopIdx,
+    extra: apiRecording.length - 1,
+  };
+}
+
+function applyRecordingBanner(state){
+  const banner = document.getElementById('rec-banner');
+  const bannerName = document.getElementById('rec-banner-name');
+  const bannerStop = document.getElementById('rec-banner-stop');
+  const bannerMore = document.getElementById('rec-banner-more');
+  if(!banner || !bannerName || !bannerStop || !bannerMore) return;
+  if(state.show){
+    banner.classList.add('visible');
+    bannerName.textContent = state.name || 'Recording';
+    bannerStop.dataset.index = String(state.stopIdx);
+    if(state.extra > 0){
+      bannerMore.textContent = '+' + state.extra + ' more';
+      bannerMore.style.display = 'inline';
+    }else{
+      bannerMore.style.display = 'none';
+    }
+  }else{
+    banner.classList.remove('visible');
+    bannerMore.style.display = 'none';
+    bannerStop.dataset.index = '';
+    bannerName.textContent = '';
+  }
+}
+
 function refreshStatus(){
   fetch('/api/status').then(r=>{
     if(!r.ok) throw new Error('status '+r.status);
@@ -1502,14 +1573,20 @@ function refreshStatus(){
     }else{
       bDisp.style.display='none';
     }
-    // Banner + LED + tab count are driven by active/waiting jobs from /api/status.
-    // The detailed recordings pane (active + completed files) is owned by refreshRecordings().
+    // Banner + LED + tab count are driven by /api/status; strip also reconciles with /api/recordings on refreshRecordings().
     const recCountEl=document.getElementById('rec-count');
     const led=document.getElementById('status-led');
     const recordings=Array.isArray(d.recordings)?d.recordings:[];
-    const activeRecs=recordings.filter(r=>r.status==='recording'&&r.stoppable);
-    const anyRecording=activeRecs.length>0;
-    const activeOrWaiting=recordings.filter(r=>r.stoppable).length;
+    __cachedStatusRecordings = recordings;
+    const statusRecording = recordings.some(r=>r.status === 'recording' && r.stoppable !== false);
+    const apiRecording = __lastApiActive.some(r=>r.status === 'recording');
+    const anyRecording = statusRecording || apiRecording;
+    let activeOrWaiting = recordings.filter(r=>
+      r.stoppable !== false && (r.status === 'waiting' || r.status === 'recording')
+    ).length;
+    if(activeOrWaiting === 0 && __lastApiActive.length){
+      activeOrWaiting = __lastApiActive.length;
+    }
     if(activeOrWaiting){
       recCountEl.textContent=activeOrWaiting;
       recCountEl.className=anyRecording?'count live':'count';
@@ -1518,23 +1595,7 @@ function refreshStatus(){
       recCountEl.className='count';
     }
     led.classList.toggle('live', anyRecording);
-    const banner=document.getElementById('rec-banner');
-    const bannerName=document.getElementById('rec-banner-name');
-    const bannerStop=document.getElementById('rec-banner-stop');
-    const bannerMore=document.getElementById('rec-banner-more');
-    if(anyRecording){
-      banner.classList.add('visible');
-      bannerName.textContent=activeRecs[0].name;
-      bannerStop.dataset.index=recordings.findIndex(r=>r===activeRecs[0]);
-      if(activeRecs.length>1){
-        bannerMore.textContent=`+${activeRecs.length-1} more`;
-        bannerMore.style.display='inline';
-      }else{
-        bannerMore.style.display='none';
-      }
-    }else{
-      banner.classList.remove('visible');
-    }
+    applyRecordingBanner(pickRecordingBannerState(recordings, __lastApiActive));
     if(d.recording_failover_secs){
       const inp=document.getElementById('failover-secs-input');
       if(inp && document.activeElement!==inp){
@@ -2902,6 +2963,8 @@ function refreshRecordings(force){
     const el=document.getElementById('recordings');
     const active    = Array.isArray(d.active)    ? d.active    : [];
     const completed = Array.isArray(d.completed) ? d.completed : [];
+    __lastApiActive = active;
+    applyRecordingBanner(pickRecordingBannerState(__cachedStatusRecordings, active));
     if(!active.length && !completed.length){
       el.innerHTML='<div class="empty">No recordings yet — start one from a channel above.</div>';
       return;

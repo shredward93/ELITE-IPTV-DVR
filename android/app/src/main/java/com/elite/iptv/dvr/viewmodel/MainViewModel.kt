@@ -245,8 +245,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun loadCompletedRecordings() {
         viewModelScope.launch {
             isLoading = true
-            runCatching { completedRecordings = ApiClient.service.getCompletedRecordings() }
-                .onFailure { errorMessage = it.message }
+            runCatching {
+                completedRecordings = ApiClient.service.getRecordings().completed
+            }.onFailure { errorMessage = it.message }
             isLoading = false
         }
     }

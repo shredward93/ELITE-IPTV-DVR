@@ -105,6 +105,8 @@ data class RecentRecording(
 data class RecordingsResponse(
     val active: List<ActiveRecording>,
     val recent: List<RecentRecording>,
+    /** Completed `.ts` files on disk — same as `remote.html` recordings drawer. */
+    val completed: List<CompletedRecording> = emptyList(),
 )
 
 data class CompletedRecording(

@@ -8,6 +8,7 @@ package com.elite.iptv.dvr.ui.player
  * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
 import android.net.Uri
+import android.view.KeyEvent
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -66,10 +67,13 @@ fun PlayerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
     var showQualityBar by remember { mutableStateOf(false) }
+    var seekHint by remember { mutableStateOf<String?>(null) }
 
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(30_000)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
@@ -157,6 +161,13 @@ fun PlayerScreen(
 
     BackHandler { onBack() }
 
+    LaunchedEffect(seekHint) {
+        if (seekHint != null) {
+            delay(900)
+            seekHint = null
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -167,15 +178,35 @@ fun PlayerScreen(
                 PlayerView(ctx).apply {
                     this.player = player
                     useController = true
+                    setShowRewindButton(true)
+                    setShowFastForwardButton(true)
                     setShowNextButton(false)
                     setShowPreviousButton(false)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
                     controllerAutoShow = true
                     controllerHideOnTouch = true
-                    setControllerShowTimeoutMs(4_000)
+                    setControllerShowTimeoutMs(6_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                player.seekBack()
+                                showController()
+                                seekHint = "-10s"
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                player.seekForward()
+                                showController()
+                                seekHint = "+30s"
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                     setControllerVisibilityListener(
                         PlayerView.ControllerVisibilityListener { visibility ->
                             showQualityBar = visibility == View.VISIBLE
@@ -209,6 +240,19 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(32.dp),
+            )
+        }
+
+        seekHint?.let { hint ->
+            Text(
+                text = hint,
+                color = EliteColors.paper,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(EliteColors.surface3.copy(alpha = 0.75f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
 

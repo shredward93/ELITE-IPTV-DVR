@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.elite.iptv.dvr.api.ApiClient
+import com.elite.iptv.dvr.api.ActiveRecording
 import com.elite.iptv.dvr.api.Category
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.api.CompletedRecording
@@ -58,6 +59,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var completedRecordings by mutableStateOf<List<CompletedRecording>>(emptyList())
+        private set
+
+    var activeRecordings by mutableStateOf<List<ActiveRecording>>(emptyList())
         private set
 
     var isLoading by mutableStateOf(false)
@@ -240,13 +244,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun getDvrSegments(): List<DvrSegment> = ApiClient.service.getDvrSegments()
 
-    // ── Completed recordings ──────────────────────────────────────────────────
+    // ── Recordings (active + completed) ─────────────────────────────────────
 
     fun loadCompletedRecordings() {
         viewModelScope.launch {
             isLoading = true
             runCatching {
-                completedRecordings = ApiClient.service.getRecordings().completed
+                val payload = ApiClient.service.getRecordings()
+                activeRecordings = payload.active
+                    .filter { it.status == "recording" && !it.liveHlsUrl.isNullOrBlank() }
+                completedRecordings = payload.completed
             }.onFailure { errorMessage = it.message }
             isLoading = false
         }

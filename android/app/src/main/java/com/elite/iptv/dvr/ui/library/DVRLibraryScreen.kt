@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,6 +46,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Surface
 import com.elite.iptv.dvr.api.ApiClient
+import com.elite.iptv.dvr.api.ActiveRecording
 import com.elite.iptv.dvr.api.CompletedRecording
 import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
@@ -62,24 +64,36 @@ fun DVRLibraryScreen(
 
     // Inline player state
     val context = LocalContext.current
-    var playingFile by remember { mutableStateOf<String?>(null) }
+    var playingUrl by remember { mutableStateOf<String?>(null) }
+    var startFromBeginning by remember { mutableStateOf(false) }
     val player = remember { ExoPlayer.Builder(context).build().apply { playWhenReady = true } }
-    LaunchedEffect(playingFile) {
-        val file = playingFile ?: run { player.stop(); return@LaunchedEffect }
-        val url = ApiClient.recordingUrl(viewModel.pcUrl, file)
+    LaunchedEffect(playingUrl, startFromBeginning) {
+        val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
         player.setMediaItem(MediaItem.fromUri(url))
         player.prepare()
+        if (startFromBeginning) {
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) {
+                        // "Now Recording" rows should open from the buffer start, not live edge.
+                        player.seekTo(0L)
+                        player.removeListener(this)
+                    }
+                }
+            }
+            player.addListener(listener)
+        }
     }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.release() } }
 
-    if (playingFile != null) {
+    if (playingUrl != null) {
         Box(Modifier.fillMaxSize().background(EliteColors.ink)) {
             AndroidView(
                 factory = { ctx -> PlayerView(ctx).also { it.player = player } },
                 modifier = Modifier.fillMaxSize(),
             )
             OutlinedButton(
-                onClick = { playingFile = null; player.stop() },
+                onClick = { playingUrl = null; player.stop() },
                 modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
                 scale = OutlinedButtonDefaults.scale(scale = 1f, focusedScale = 1.06f, pressedScale = 1f),
                 border = OutlinedButtonDefaults.border(
@@ -157,7 +171,7 @@ fun DVRLibraryScreen(
             return@Column
         }
 
-        if (viewModel.completedRecordings.isEmpty()) {
+        if (viewModel.activeRecordings.isEmpty() && viewModel.completedRecordings.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No recordings yet.", color = EliteColors.paperMuted, fontSize = 20.sp)
             }
@@ -168,9 +182,92 @@ fun DVRLibraryScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(viewModel.completedRecordings, key = { it.filename }) { rec ->
-                RecordingRow(rec) { playingFile = rec.filename }
+            if (viewModel.activeRecordings.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Now Recording",
+                        color = EliteColors.signal,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
+                items(viewModel.activeRecordings, key = { "active-${it.index}-${it.channelName}" }) { rec ->
+                    ActiveRecordingRow(rec) { livePath ->
+                        startFromBeginning = true
+                        playingUrl = ApiClient.resolvePlaybackUrl(viewModel.pcUrl, livePath)
+                    }
+                }
+                item {
+                    Text(
+                        text = "Completed",
+                        color = EliteColors.paperMuted,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+                    )
+                }
             }
+            items(viewModel.completedRecordings, key = { it.filename }) { rec ->
+                RecordingRow(rec) {
+                    startFromBeginning = false
+                    playingUrl = ApiClient.recordingUrl(viewModel.pcUrl, rec.filename)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveRecordingRow(rec: ActiveRecording, onPlay: (liveHlsPath: String) -> Unit) {
+    val livePath = rec.liveHlsUrl ?: return
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    Surface(
+        onClick = { onPlay(livePath) },
+        modifier = Modifier.fillMaxWidth().height(72.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = EliteColors.surface2,
+            focusedContainerColor = EliteColors.signal,
+        ),
+        scale = TvFocusDefaults.surfaceScaleCard,
+        border = ClickableSurfaceDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(8.dp),
+            ),
+        ),
+        interactionSource = interactionSource,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column {
+                Text(
+                    text = rec.channelName,
+                    color = if (focused) EliteColors.ink else EliteColors.paper,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = "Live recording in progress",
+                    color = if (focused) EliteColors.ink.copy(alpha = 0.72f) else EliteColors.paperMuted,
+                    fontSize = 14.sp,
+                )
+            }
+            Text(
+                text = "LIVE",
+                color = if (focused) EliteColors.ink else EliteColors.signal,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

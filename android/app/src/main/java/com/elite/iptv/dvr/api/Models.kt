@@ -94,6 +94,7 @@ data class ActiveRecording(
     @SerializedName("elapsed_secs")  val elapsedSecs: Int? = null,
     @SerializedName("remaining_secs") val remainingSecs: Int? = null,
     @SerializedName("output_file")   val outputFile: String? = null,
+    @SerializedName("live_hls_url")  val liveHlsUrl: String? = null,
 )
 
 data class RecentRecording(

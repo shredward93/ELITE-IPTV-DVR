@@ -1224,7 +1224,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
         if not rec_dir or not os.path.isdir(rec_dir):
             return []
         result = []
-        for path in sorted(glob.glob(os.path.join(rec_dir, "*.ts"))):
+        recording_exts = (".ts", ".mp4", ".mkv", ".m2ts", ".mpeg", ".mpg")
+        for path in sorted(glob.glob(os.path.join(rec_dir, "*"))):
+            if not os.path.isfile(path):
+                continue
+            if os.path.splitext(path)[1].lower() not in recording_exts:
+                continue
             try:
                 stat = os.stat(path)
                 result.append({

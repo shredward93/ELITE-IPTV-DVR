@@ -72,8 +72,8 @@ fun DVRLibraryScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
-            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS.toInt())
-            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS.toInt())
+            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS)
+            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(15_000, 60_000, 2_000, 5_000)

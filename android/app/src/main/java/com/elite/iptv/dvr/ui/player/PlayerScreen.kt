@@ -59,8 +59,8 @@ fun PlayerScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
-            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS.toInt())
-            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS.toInt())
+            .setSeekBackIncrementMs(TV_SCRUB_STEP_MS)
+            .setSeekForwardIncrementMs(TV_SCRUB_STEP_MS)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(

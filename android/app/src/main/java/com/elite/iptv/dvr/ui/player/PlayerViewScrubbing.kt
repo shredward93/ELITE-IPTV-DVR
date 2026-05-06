@@ -17,9 +17,11 @@ fun PlayerView.configurePlayheadKeyScrubbing(keyIncrementMs: Long) {
     val apply: () -> Unit = {
         findViewById<DefaultTimeBar>(Media3UiR.id.exo_progress)?.setKeyTimeIncrement(keyIncrementMs)
     }
-    setControllerVisibilityListener { visibility ->
-        if (visibility == View.VISIBLE) post(apply)
-    }
+    setControllerVisibilityListener(
+        PlayerView.ControllerVisibilityListener { visibility ->
+            if (visibility == View.VISIBLE) post(apply)
+        },
+    )
     post(apply)
 }
 

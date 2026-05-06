@@ -94,7 +94,23 @@ fun DVRLibraryScreen(
     if (playingUrl != null) {
         Box(Modifier.fillMaxSize().background(EliteColors.ink)) {
             AndroidView(
-                factory = { ctx -> PlayerView(ctx).also { it.player = player } },
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = player
+                        useController = true
+                        setShowRewindButton(true)
+                        setShowFastForwardButton(true)
+                        setShowNextButton(false)
+                        setShowPreviousButton(false)
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                        keepScreenOn = true
+                        controllerAutoShow = true
+                        controllerHideOnTouch = true
+                        setControllerShowTimeoutMs(5_000)
+                        isFocusable = true
+                        isFocusableInTouchMode = true
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }

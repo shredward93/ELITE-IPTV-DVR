@@ -130,3 +130,10 @@ data class ChannelEpg(
     @SerializedName("channel_id") val channelId: String,
     val listings: List<EpgListing>,
 )
+
+data class GuideBundle(
+    val channels: List<Channel> = emptyList(),
+    @SerializedName("guide_epg") val guideEpg: Map<String, List<EpgListing>> = emptyMap(),
+    val source: String? = null,
+    @SerializedName("generated_at") val generatedAt: Long? = null,
+)

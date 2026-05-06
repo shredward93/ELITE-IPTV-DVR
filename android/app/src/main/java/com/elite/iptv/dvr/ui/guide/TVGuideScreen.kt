@@ -52,6 +52,12 @@ import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
+private data class TvGuideRenderItem(
+    val listing: EpgListing,
+    val startMs: Long,
+    val stopMs: Long,
+)
+
 @Composable
 fun TVGuideScreen(
     viewModel: MainViewModel,
@@ -216,15 +222,23 @@ fun TVGuideScreen(
         }
 
         // ── EPG Listings ──────────────────────────────────────────────────────
+        val renderItems = remember(viewModel.epgListings) {
+            viewModel.epgListings.map { listing ->
+                TvGuideRenderItem(
+                    listing = listing,
+                    startMs = parseEpgMs(listing.start),
+                    stopMs = parseEpgMs(listing.stop),
+                )
+            }
+        }
+
         LazyColumn(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(viewModel.epgListings, key = { it.start ?: it.title }) { listing ->
-                val startMs = parseEpgMs(listing.start)
-                val stopMs = parseEpgMs(listing.stop)
-                val isNow = startMs <= anchorMs && stopMs > anchorMs
-                EpgRow(listing, isNow = isNow, onRecord = { scheduleDialog = listing })
+            items(renderItems, key = { it.listing.start ?: it.listing.title }) { item ->
+                val isNow = item.startMs <= anchorMs && item.stopMs > anchorMs
+                EpgRow(item.listing, isNow = isNow, onRecord = { scheduleDialog = item.listing })
             }
         }
     }

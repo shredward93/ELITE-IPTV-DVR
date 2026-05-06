@@ -4,26 +4,27 @@
 
 1. **Backend Modularization** — Split `iptv_recorder.py` (~2100 lines) into clean, independently editable modules ✅ Complete
 2. **Frontend Modernization** — Expand the existing web remote into the primary UI; CTk becomes a background service ✅ Complete
-3. **Kodi PVR Integration** — Native Kodi PVR addon + custom ELITE skin for TiviMate-like experience with PC-based recording
+3. **Android TV app** — Kotlin, Jetpack Compose, Media3; thin client on the same `/api/*` + HLS contract as `static/remote.html` (pairing, channel search/favorites, category EPG grid, per-channel guide, record/schedule flows, DVR library with range-based `.ts` playback, live watch modes). Shipped in `android/`; ongoing UX parity and polish.
+4. **Kodi PVR Integration** — Native Kodi PVR addon + custom ELITE skin for TiviMate-like experience with PC-based recording (optional alongside Android TV / web)
    - PVR addon with full grid guide
    - Pause/rewind live TV via DVR buffer
    - One-click recording to PC hard drive
    - Custom ELITE skin for consistent branding
-4. **NAS Deployment** — Headless Docker deployment for always-on server (Synology DS1621xs+)
+5. **NAS Deployment** — Headless Docker deployment for always-on server (Synology DS1621xs+)
    - Stream multiplexing for multi-user efficiency
    - Headless launcher (no GUI)
    - Docker container support
    - Environment variable configuration
 
-5. **Multistream mode** (future) — opt-in toggle at the top of the web UI, off by default.
+6. **Multistream mode** (future) — opt-in toggle at the top of the web UI, off by default.
    When enabled, relaxes the one-video-at-a-time rule and lets the user open a
    second player pane so two channels (or a channel + a recording) can play side
    by side — a simple dual-screen layout with independent audio selection.
    Extend later to more panes if it proves useful.
 
-6. **Per-job backup channel** (future) — Today the backup is **global**: one failover channel used when the primary feed fails during a recording; new jobs copy whatever backup is set at schedule/start time, and **Set backup** replaces the previous global value. Future work: **assign backup only to a specific queued (or active) recording job** — e.g. choose job index in the web UI, extend `/api` to patch `RecordingJob.backup_*` for that job without changing the global default, and mirror in headless + desktop UIs.
+7. **Per-job backup channel** (future) — Today the backup is **global**: one failover channel used when the primary feed fails during a recording; new jobs copy whatever backup is set at schedule/start time, and **Set backup** replaces the previous global value. Future work: **assign backup only to a specific queued (or active) recording job** — e.g. choose job index in the web UI, extend `/api` to patch `RecordingJob.backup_*` for that job without changing the global default, and mirror in headless + desktop UIs.
 
-7. **Session timeshift file** (future) — Keep the current **rolling Live DVR** HLS buffer as-is (short rewind, live-ish behavior). For long pauses (e.g. step away mid–sporting event), users can already use an **in-progress live recording** from the Recordings section (HLS with pause/rewind). Future enhancement: optional **background record to a single `.ts` / `.mkv` file for the watch session** — one continuous container written alongside (or instead of) the tight rolling window, so the server retains a seekable tail long enough for extended pause/chase-play without relying on the provider’s live edge alone. Design TBD (disk caps, UI toggle, API, cleanup when session ends).
+8. **Session timeshift file** (future) — Keep the current **rolling Live DVR** HLS buffer as-is (short rewind, live-ish behavior). For long pauses (e.g. step away mid–sporting event), users can already use an **in-progress live recording** from the Recordings section (HLS with pause/rewind). Future enhancement: optional **background record to a single `.ts` / `.mkv` file for the watch session** — one continuous container written alongside (or instead of) the tight rolling window, so the server retains a seekable tail long enough for extended pause/chase-play without relying on the provider’s live edge alone. Design TBD (disk caps, UI toggle, API, cleanup when session ends).
 
 ---
 

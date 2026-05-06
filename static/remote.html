@@ -1179,6 +1179,7 @@ function getSelectedChannelContext(){
 }
 let activeTab='guide';
 let guideCategories=[],guideBundle=null,guideSelectedCategoryId='',guideSelectedChannelId='',guideLoading=false,guideError='';
+let guideFallbackEpgByChannel={},guideFallbackFetchKey='';
 let logOpen=false;
 let savedCategories=JSON.parse(localStorage.getItem('elite_saved_cats')||'[]');
 function isCatSaved(id){return savedCategories.some(c=>c.id===String(id))}
@@ -1276,6 +1277,11 @@ function guideIsNow(listing){
 }
 function guideProgramTitle(l){return String(l&&l.title||'').trim()||'Untitled'}
 function guideProgramDesc(l){return String(l&&l.description||'').trim()}
+function guideListingsForChannel(channelId, primary){
+  const rows=Array.isArray(primary)?primary:[];
+  if(rows.length) return rows;
+  return guideFallbackEpgByChannel[String(channelId)]||[];
+}
 function normalizeGuideCategoryName(n){return String(n||'').toLowerCase().replace(/[_\-]+/g,' ').replace(/\s+/g,' ').trim()}
 function isAllowedGuideCategory(cat){
   const n=normalizeGuideCategoryName(cat&&cat.category_name);
@@ -1340,8 +1346,37 @@ function renderGuideCategories(){
 }
 
 
+function hydrateGuideRowsFallback(channels, guideEpg){
+  const channelList=Array.isArray(channels)?channels:[];
+  const missing=channelList.filter(ch=>!(Array.isArray(guideEpg[ch.id])&&guideEpg[ch.id].length));
+  if(!missing.length) return;
+  const missingIds=missing.map(ch=>String(ch.id)).filter(Boolean);
+  const key=`${guideSelectedCategoryId}|${missingIds.join(',')}`;
+  if(guideFallbackFetchKey===key) return;
+  guideFallbackFetchKey=key;
+  fetch('/api/epg/multi?channel_ids='+encodeURIComponent(missingIds.join(','))+'&limit=4')
+    .then(r=>r.json())
+    .then(rows=>{
+      if(!Array.isArray(rows)) return;
+      const updates={};
+      for(const item of rows){
+        const channelId=String(item&&item.channel_id||'');
+        if(!channelId) continue;
+        const listings=Array.isArray(item.listings)?item.listings:[];
+        if(listings.length) updates[channelId]=listings;
+      }
+      if(!Object.keys(updates).length) return;
+      guideFallbackEpgByChannel={...guideFallbackEpgByChannel, ...updates};
+      if(guideBundle && String(guideBundle.category_id||'')===String(guideSelectedCategoryId||'')){
+        renderGuidePanel();
+      }
+    })
+    .catch(()=>{});
+}
+
 function renderGuideChannel(channel, listings){
-  const current=listings.find(guideIsNow) || listings[0] || null;
+  const mergedListings=guideListingsForChannel(channel.id, listings);
+  const current=mergedListings.find(guideIsNow) || mergedListings[0] || null;
   const currentText=current ? `${guideTimeLabel(current)} · ${guideProgramTitle(current)}` : 'No guide data';
   const desc=current?guideProgramDesc(current):'';
   const rowClass=String(guideSelectedChannelId)===String(channel.id)?' active':'';
@@ -1386,9 +1421,10 @@ function renderGuidePanel(){
   if(!guideBundle || !guideBundle.channels){panel.innerHTML='<div class="guide-empty">No channels loaded for this category.</div>';return}
   const channels=guideBundle.channels||[];
   const guideEpg=guideBundle.guide_epg||{};
+  hydrateGuideRowsFallback(channels, guideEpg);
   const categoryLabel=guideCategoryName(guideSelectedCategoryId);
   const selectedChannel=channels.find(ch=>String(ch.id)===String(guideSelectedChannelId)) || channels[0] || null;
-  const selectedListings=selectedChannel ? (guideEpg[selectedChannel.id]||[]) : [];
+  const selectedListings=selectedChannel ? guideListingsForChannel(selectedChannel.id, guideEpg[selectedChannel.id]||[]) : [];
   panel.innerHTML=`<div class="guide-channel-window">
     <div class="guide-channel-window-head">
       <div>
@@ -1430,6 +1466,7 @@ function selectGuideCategory(categoryId){
   guideSelectedCategoryId=String(categoryId||'');
   guideSelectedChannelId='';
   guideBundle=null;
+  guideFallbackFetchKey='';
   renderGuideCategories();
   renderGuidePanel();
   updateGuideBreadcrumb();
@@ -1442,6 +1479,7 @@ function clearGuideSelection(){
   guideSelectedCategoryId='';
   guideSelectedChannelId='';
   guideBundle=null;
+  guideFallbackFetchKey='';
   guideError='';
   renderGuideCategories();
   renderGuidePanel();
@@ -1463,6 +1501,7 @@ async function refreshGuide(force=false){
     if(force)params.set('refresh','1');
     const bundle=await fetch(`/api/guide?${params.toString()}`).then(r=>r.json());
     guideBundle=bundle;
+    guideFallbackFetchKey='';
     renderGuidePanel();
   }catch(err){
     guideError=err.message||'request failed';

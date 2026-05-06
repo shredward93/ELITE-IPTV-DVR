@@ -203,7 +203,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         categoryChannels = emptyList()
         guideEpg = emptyMap()
         viewModelScope.launch {
-            runCatching { categoryChannels = ApiClient.service.getChannelsByCategory(categoryId) }
+            runCatching {
+                val bundle = ApiClient.service.getGuide(
+                    categoryId = categoryId,
+                    limit = 24,
+                    refresh = 0,
+                )
+                categoryChannels = bundle.channels
+                guideEpg = bundle.guideEpg
+            }.onFailure {
+                // Safe fallback path for older server builds that may not expose /api/guide.
+                runCatching { categoryChannels = ApiClient.service.getChannelsByCategory(categoryId) }
+            }
         }
     }
 

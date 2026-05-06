@@ -58,6 +58,13 @@ interface ApiService {
         @Query("window_end_ms") windowEndMs: Long = 0L,
     ): List<ChannelEpg>
 
+    @GET("api/guide")
+    suspend fun getGuide(
+        @Query("category_id") categoryId: String,
+        @Query("limit") limit: Int = 24,
+        @Query("refresh") refresh: Int = 0,
+    ): GuideBundle
+
     // ── Recordings ────────────────────────────────────────────────────────────
 
     @POST("api/schedule")

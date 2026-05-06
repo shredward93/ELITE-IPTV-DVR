@@ -1,16 +1,25 @@
 # ELITE IPTV Recorder
 
-A Python IPTV recording backend with a mobile web remote and a Kodi-first living-room workflow.
+A Python IPTV recording backend with a **mobile web remote**, an **Android TV app** (Kotlin, Jetpack Compose, Media3), and optional **Kodi** add-ons + skin for the living room.
 
-The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favorites, EPG lookup, and remote access. The TV side now centers on Kodi add-ons and the ELITE Kodi skin.
+The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favorites, EPG lookup, and remote access. TV clients are **thin**: they talk to the same HTTP API on port **8080**; no transcoding or file management on the device.
 
 ## Key Features
 
 - **Live Guide & EPG Fetching:** Fetches and parses your provider's channel list and EPG data for scheduling reference.
-- **Mobile Web Remote:** Built-in lightweight HTTP server on port 8080 for search, scheduling, favorites, and active job control.
+- **Mobile Web Remote:** Built-in lightweight HTTP server on port 8080 for search, scheduling, favorites, and active job control (`static/remote.html` and related assets).
+- **Android TV app (`android/`):**
+  - **Pairing:** Connect to the PC URL (same LAN as the recorder); optional **recorder failover seconds** (5–300) saved on the server.
+  - **Channels:** Search (debounced), favorites grid, record-now / schedule-later dialogs with clear selected-vs-unselected contrast.
+  - **Guides:** Multi-channel **EPG grid** by category and single-channel **TV guide** with schedule/record actions.
+  - **Live playback (parity with web):** Watch modes — **Live DVR** (preview HLS), **Original** (`/api/stream/live`), **Data saver** (mobile HLS profile) — same URLs/server behavior as the mobile webapp.
+  - **DVR Library:** Lists **active** and **completed** recordings from `GET /api/recordings`; plays completed and in-progress `.ts` via **range‑seekable** URLs (`ts_url` / fallback HLS); inline **ExoPlayer** with full transport controls.
+  - **Back / remote:** Back hides the player controls first; another Back returns to the **previous in-app screen** (guide, library, channels). Navigation uses a **stable NavHost start** so the stack is not reset after pairing.
+  - **Seek / scrub (D-pad):** Progress bar uses **fixed small steps** (not “duration ÷ 20,” which caused multi‑minute jumps on long files); rewind / fast-forward buttons use shorter increments tuned for TV remotes.
+  - **UI:** Dark ELITE palette (`EliteColors`), focus rings, and readable borders on lists and form fields.
 - **Cloudflare Tunnel Remote Access:** Optional public tunnel for controlling recordings outside your local network. Supports both quick tunnels (temporary URL) and named tunnels with your own custom domain.
 - **Resilient Recording & Backup Channels:** Uses FFmpeg reconnect flags and supports a backup channel if the primary stream fails.
-- **Kodi-first TV workflow:** Native Kodi add-ons and the ELITE skin are the primary couch interface for guide browsing and recording.
+- **Kodi workflow (optional):** Kodi PVR/video add-ons and the ELITE skin for guide browsing and recording alongside the same backend.
 - **Setup Wizard & Settings:** First-run onboarding to save XtreamCodes credentials and tunnel configurations.
 - **Auto-Dependency Check:** On Windows, the app can prompt to install FFmpeg via `winget` if needed.
 
@@ -23,6 +32,8 @@ The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favor
 ![Desktop UI](Screenshots/Screenshot%202026-04-10%20134911.png)
 ![Mobile Web Remote](Screenshots/Screenshot%202026-04-10%20135741.png)
 
+_Add Android TV captures under `Screenshots/` or `assets/` when available._
+
 ## Prerequisites
 
 - **Python 3.8+** installed.
@@ -31,7 +42,8 @@ The PC handles the heavy lifting: `FFmpeg` recording, scheduling, backups, favor
   - *macOS:* `brew install ffmpeg`
   - *Linux:* `sudo apt install ffmpeg`
 - **cloudflared (optional):** Only needed for Cloudflare Tunnel remote access. Download from [Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
-- **Kodi:** Install Kodi on your TV device to use the ELITE skin and addon workflow.
+- **Android TV (optional):** Android **5.0+ (API 21+)** on the TV or set-top box; JDK 17 + Android Studio to build the `android/` module.
+- **Kodi (optional):** Install Kodi on your TV device to use the ELITE skin and add-on workflow.
 - **Storage:** Make sure your output directory has enough free space.
 
 ## Installation & Setup
@@ -47,15 +59,17 @@ For Windows users, you can download the packaged release directly from the Relea
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/iptv-recorder.git
-   cd iptv-recorder
+   git clone https://github.com/shredward93/ELITE-IPTV-DVR.git
+   cd ELITE-IPTV-DVR
    ```
 
 2. Install the required Python dependencies:
 
    ```bash
-   pip install customtkinter requests
+   pip install -r requirements.txt customtkinter
    ```
+
+   (`requirements.txt` covers shared server libs; `customtkinter` is required for the desktop UI entrypoints.)
 
 3. Run the application:
 
@@ -64,6 +78,13 @@ For Windows users, you can download the packaged release directly from the Relea
    ```
 
 4. On first run, the Setup Wizard saves your IPTV provider's XtreamCodes credentials to `credentials.json`.
+
+### Android TV app
+
+1. Install [Android Studio](https://developer.android.com/studio) (JDK **17**).
+2. Open the `android/` folder (or import the repo and select the `android` Gradle project).
+3. Build a debug or release APK: **Build → Build Bundle(s) / APK(s)** or `./gradlew assembleDebug` from `android/`.
+4. On the TV, install the APK and enter the PC’s base URL (e.g. `http://192.168.1.100:8080`). The recorder must already be running and reachable on your LAN.
 
 ## Updating (NAS/Docker Deployment)
 
@@ -114,19 +135,25 @@ To rebuild: Container Manager → **Action** → **Reset and Rebuild**
 3. Open the URL on your phone or tablet.
 4. Search channels, view EPG, schedule jobs, or stop active recordings.
 
-### Kodi Frontend
+### Kodi Frontend (optional)
 
 1. Install the Kodi add-ons and skin from `kodi-addon/` and `kodi-skin/`.
 2. Point Kodi at the PC backend using the Kodi setup guide.
-3. Use Kodi as the main living-room interface for browsing and recording.
+3. Use Kodi as a living-room interface for browsing and recording (same API as the web and Android TV clients).
+
+### Android TV app
+
+1. Ensure the recorder is running and the TV can reach `http://<pc-ip>:8080`.
+2. Pair once in the app; use **Channels** for search/favorites, **Guide grid** / per-channel **TV Guide** for EPG, and **DVR Library** for recordings.
+3. During playback, **Back** hides on-screen controls first, then exits to the screen you came from.
 
 ## Roadmap
 
-- **Kodi-first TV experience:** Finish the Kodi addon and ELITE skin integration so the TV UI becomes the primary couch workflow.
-- **NAS/Docker support:** Build containerized version for Synology, TrueNAS, and other NAS systems.
-- **Kodi setup polish:** Document SMB setup and the install flow for the Kodi skin/addon path.
-- **Web remote maintenance:** Keep the mobile remote API-compatible with backend changes.
-- **Backend cleanup:** Continue pruning unused legacy code and docs as the Kodi-first path matures.
+- **Android TV:** Keep parity with `static/remote.html` for URLs and watch modes; refine UX from feedback.
+- **Kodi TV experience:** Continue the PVR addon and ELITE skin integration for users who prefer Kodi.
+- **NAS/Docker support:** Containerized deployment for Synology, TrueNAS, and similar.
+- **Web remote:** Stay API-compatible with backend changes.
+- **Backend cleanup:** Prune unused legacy code and keep docs aligned with shipped clients.
 
 ## Remote Access Setup (Cloudflare Tunnel)
 

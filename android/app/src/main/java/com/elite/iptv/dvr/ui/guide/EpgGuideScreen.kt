@@ -68,6 +68,13 @@ import java.util.TimeZone
 private const val DP_PER_MIN = 4   // dp per minute in the timeline
 /** Channel gutter width — aligns with [GuideTimeHeader] and TiviMate-like dense rail. */
 private val ChannelGutterDp = 176.dp
+private data class EpgRenderItem(
+    val listing: EpgListing,
+    val startMs: Long,
+    val stopMs: Long,
+    val startLabel: String,
+    val stopLabel: String,
+)
 
 @Composable
 fun EpgGuideScreen(
@@ -106,11 +113,6 @@ fun EpgGuideScreen(
     LaunchedEffect(selectedCategory) {
         val cat = selectedCategory ?: return@LaunchedEffect
         viewModel.loadChannelsByCategory(cat.categoryId)
-    }
-
-    LaunchedEffect(viewModel.categoryChannels) {
-        val ids = viewModel.categoryChannels.take(48).map { it.id }
-        if (ids.isNotEmpty()) viewModel.loadGuideEpgBatched(ids)
     }
 
     Box(Modifier.fillMaxSize().background(EliteColors.ink)) {
@@ -443,10 +445,18 @@ private fun GuideChannelRow(
     onRecord: (EpgListing) -> Unit,
 ) {
     val visible = remember(listings, windowStartMs, windowEndMs) {
-        listings.filter { l ->
-            val stop  = parseEpgMs(l.stop)
+        listings.map { l ->
             val start = parseEpgMs(l.start)
-            stop > windowStartMs && start < windowEndMs
+            val stop = parseEpgMs(l.stop)
+            EpgRenderItem(
+                listing = l,
+                startMs = start,
+                stopMs = stop,
+                startLabel = formatEpgMs(start),
+                stopLabel = formatEpgMs(stop),
+            )
+        }.filter { item ->
+            item.stopMs > windowStartMs && item.startMs < windowEndMs
         }
     }
 
@@ -511,20 +521,18 @@ private fun GuideChannelRow(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 contentPadding        = PaddingValues(end = 8.dp),
             ) {
-                items(visible, key = { it.start ?: it.title }) { listing ->
-                    val startMs      = parseEpgMs(listing.start)
-                    val stopMs       = parseEpgMs(listing.stop)
-                    val clampedStart = maxOf(startMs, windowStartMs)
-                    val clampedStop  = minOf(stopMs, windowEndMs)
+                items(visible, key = { it.listing.start ?: it.listing.title }) { item ->
+                    val clampedStart = maxOf(item.startMs, windowStartMs)
+                    val clampedStop  = minOf(item.stopMs, windowEndMs)
                     val durationMin  = ((clampedStop - clampedStart) / 60_000f).coerceAtLeast(15f)
                     val widthDp: Dp  = (durationMin * DP_PER_MIN).dp.coerceAtLeast(60.dp)
-                    val isNow        = startMs <= nowMs && stopMs > nowMs
+                    val isNow        = item.startMs <= nowMs && item.stopMs > nowMs
 
                     ProgramCell(
-                        listing = listing,
+                        item = item,
                         widthDp = widthDp,
                         isNow   = isNow,
-                        onClick = { onRecord(listing) },
+                        onClick = { onRecord(item.listing) },
                     )
                 }
             }
@@ -536,7 +544,7 @@ private fun GuideChannelRow(
 
 @Composable
 private fun ProgramCell(
-    listing: EpgListing,
+    item: EpgRenderItem,
     widthDp: Dp,
     isNow: Boolean,
     onClick: () -> Unit,
@@ -578,7 +586,7 @@ private fun ProgramCell(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    text     = listing.title,
+                    text     = item.listing.title,
                     color    = if (isNow) EliteColors.signal else EliteColors.paper,
                     fontSize = 13.sp,
                     fontWeight = if (isNow) FontWeight.SemiBold else FontWeight.Medium,
@@ -586,7 +594,7 @@ private fun ProgramCell(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text     = "${formatEpgTime(listing.start)}–${formatEpgTime(listing.stop)}",
+                    text     = "${item.startLabel}–${item.stopLabel}",
                     color    = EliteColors.paperMuted,
                     fontSize = 10.sp,
                 )
@@ -601,6 +609,10 @@ private val _epgSdf = ThreadLocal.withInitial {
     SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
+}
+
+private val _timeSdf = ThreadLocal.withInitial {
+    SimpleDateFormat("HH:mm", Locale.getDefault())
 }
 
 internal fun parseEpgMs(raw: String?): Long {
@@ -623,12 +635,16 @@ internal fun parseEpgMs(raw: String?): Long {
 }
 
 private fun formatMs(ms: Long): String =
-    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
+    _timeSdf.get()!!.format(Date(ms))
 
 internal fun formatEpgTime(raw: String?): String {
     val ms = parseEpgMs(raw)
+    return formatEpgMs(ms)
+}
+
+private fun formatEpgMs(ms: Long): String {
     if (ms <= 0L) return "--:--"
-    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
+    return _timeSdf.get()!!.format(Date(ms))
 }
 
 internal fun epgDurationMins(start: String?, stop: String?): Int {

@@ -54,6 +54,7 @@ import com.elite.iptv.dvr.ui.theme.EliteColors
 import com.elite.iptv.dvr.ui.theme.TvFocusDefaults
 import com.elite.iptv.dvr.viewmodel.MainViewModel
 import java.text.DecimalFormat
+import kotlinx.coroutines.delay
 
 @Composable
 fun DVRLibraryScreen(
@@ -67,6 +68,7 @@ fun DVRLibraryScreen(
     // Inline player state
     val context = LocalContext.current
     var playingUrl by remember { mutableStateOf<String?>(null) }
+    var libraryPlayerView by remember { mutableStateOf<PlayerView?>(null) }
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -84,10 +86,17 @@ fun DVRLibraryScreen(
         val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
         player.stop()
         player.clearMediaItems()
-        // Direct .ts file playback (works for completed AND in-progress files via range requests).
-        // Position 0 = byte 0 = true beginning of the recording. No HLS live-edge issues.
+        // Direct .ts — supports range requests, so position 0 = true start of recording.
         player.setMediaItem(MediaItem.fromUri(Uri.parse(url)), /* startPositionMs= */ 0L)
         player.prepare()
+        // Show controls immediately and keep focus on the PlayerView so remote keys work.
+        libraryPlayerView?.showController()
+        while (playingUrl != null) {
+            libraryPlayerView?.let {
+                if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
+            }
+            delay(750)
+        }
     }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.release() } }
 
@@ -109,7 +118,7 @@ fun DVRLibraryScreen(
                         setControllerShowTimeoutMs(5_000)
                         isFocusable = true
                         isFocusableInTouchMode = true
-                    }
+                    }.also { libraryPlayerView = it }
                 },
                 modifier = Modifier.fillMaxSize(),
             )

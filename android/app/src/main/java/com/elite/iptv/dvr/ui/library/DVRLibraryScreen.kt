@@ -92,31 +92,6 @@ fun DVRLibraryScreen(
                 factory = { ctx -> PlayerView(ctx).also { it.player = player } },
                 modifier = Modifier.fillMaxSize(),
             )
-            OutlinedButton(
-                onClick = { playingUrl = null; player.stop() },
-                modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-                scale = OutlinedButtonDefaults.scale(scale = 1f, focusedScale = 1.06f, pressedScale = 1f),
-                border = OutlinedButtonDefaults.border(
-                    border = Border(
-                        border = BorderStroke(1.5.dp, EliteColors.rule),
-                        inset = 0.dp,
-                        shape = RoundedCornerShape(10.dp),
-                    ),
-                    focusedBorder = Border(
-                        border = BorderStroke(2.dp, EliteColors.signal),
-                        inset = 0.dp,
-                        shape = RoundedCornerShape(10.dp),
-                    ),
-                ),
-                colors = OutlinedButtonDefaults.colors(
-                    containerColor = Color.Transparent,
-                    contentColor = EliteColors.paper,
-                    focusedContainerColor = EliteColors.surface3,
-                    focusedContentColor = EliteColors.signal,
-                ),
-            ) {
-                Text("← Back", fontSize = 18.sp)
-            }
         }
         return
     }

@@ -8,7 +8,6 @@ package com.elite.iptv.dvr.ui.player
  * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
 import android.net.Uri
-import android.view.KeyEvent
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -16,11 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -42,9 +37,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Border
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.api.PreviewStartRequest
 import com.elite.iptv.dvr.api.PreviewStopRequest
@@ -66,14 +58,10 @@ fun PlayerScreen(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
-    var showQualityBar by remember { mutableStateOf(false) }
-    var seekHint by remember { mutableStateOf<String?>(null) }
 
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus= */ true)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(30_000)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
@@ -121,6 +109,8 @@ fun PlayerScreen(
                     }
                     previewToStop = pid
                     val uri = Uri.parse(ApiClient.resolvePlaybackUrl(viewModel.pcUrl, path))
+                    // Small warmup so first HLS segments are ready before player starts.
+                    delay(1200)
                     player.setMediaItem(liveHlsMediaItem(uri))
                     player.prepare()
                 }
@@ -140,6 +130,8 @@ fun PlayerScreen(
                             "api/stream/mobile.m3u8?channel_id=$enc&profile=data_saver",
                         ),
                     )
+                    // Give transcoder/HLS playlist a moment to settle for smoother startup.
+                    delay(900)
                     player.setMediaItem(liveHlsMediaItem(uri))
                     player.prepare()
                 }
@@ -161,10 +153,15 @@ fun PlayerScreen(
 
     BackHandler { onBack() }
 
-    LaunchedEffect(seekHint) {
-        if (seekHint != null) {
-            delay(900)
-            seekHint = null
+    // Keep focus pinned on PlayerView so remote D-pad controls stay consistent.
+    LaunchedEffect(isLoading, error) {
+        if (!isLoading && error == null) {
+            while (true) {
+                playerView?.let {
+                    if (it.isAttachedToWindow && !it.hasFocus()) it.requestFocus()
+                }
+                delay(750)
+            }
         }
     }
 
@@ -178,40 +175,15 @@ fun PlayerScreen(
                 PlayerView(ctx).apply {
                     this.player = player
                     useController = true
-                    setShowRewindButton(true)
-                    setShowFastForwardButton(true)
                     setShowNextButton(false)
                     setShowPreviousButton(false)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
-                    controllerAutoShow = true
+                    controllerAutoShow = false
                     controllerHideOnTouch = true
-                    setControllerShowTimeoutMs(6_000)
+                    setControllerShowTimeoutMs(4_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
-                    setOnKeyListener { _, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                player.seekBack()
-                                showController()
-                                seekHint = "-10s"
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                player.seekForward()
-                                showController()
-                                seekHint = "+30s"
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    setControllerVisibilityListener(
-                        PlayerView.ControllerVisibilityListener { visibility ->
-                            showQualityBar = visibility == View.VISIBLE
-                        },
-                    )
                 }.also { playerView = it }
             },
             modifier = Modifier.fillMaxSize(),
@@ -243,29 +215,6 @@ fun PlayerScreen(
             )
         }
 
-        seekHint?.let { hint ->
-            Text(
-                text = hint,
-                color = EliteColors.paper,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(EliteColors.surface3.copy(alpha = 0.75f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
-            )
-        }
-
-        if (showQualityBar && !isLoading && error == null) {
-            WatchQualityBar(
-                current = viewModel.watchMode,
-                onSelect = viewModel::applyWatchMode,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 36.dp),
-            )
-        }
-
     }
 }
 
@@ -283,77 +232,3 @@ private fun liveHlsMediaItem(uri: Uri): MediaItem =
         )
         .build()
 
-@Composable
-private fun WatchQualityBar(
-    current: String,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "QUALITY",
-            color = EliteColors.paperMuted,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.8.sp,
-            modifier = Modifier.padding(end = 4.dp),
-        )
-        QualityModeButton(
-            label = "Live DVR",
-            mode = MainViewModel.WATCH_LIVE_DVR,
-            current = current,
-            onSelect = onSelect,
-        )
-        QualityModeButton(
-            label = "Original",
-            mode = MainViewModel.WATCH_ORIGINAL,
-            current = current,
-            onSelect = onSelect,
-        )
-        QualityModeButton(
-            label = "Data saver",
-            mode = MainViewModel.WATCH_DATA_SAVER,
-            current = current,
-            onSelect = onSelect,
-        )
-    }
-}
-
-@Composable
-private fun QualityModeButton(
-    label: String,
-    mode: String,
-    current: String,
-    onSelect: (String) -> Unit,
-) {
-    val active = current == mode
-    Button(
-        onClick = { onSelect(mode) },
-        modifier = Modifier.padding(0.dp),
-        scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.04f, pressedScale = 1f),
-        border = ButtonDefaults.border(
-            border = Border.None,
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, EliteColors.signal),
-                inset = 0.dp,
-                shape = RoundedCornerShape(8.dp),
-            ),
-        ),
-        colors = ButtonDefaults.colors(
-            containerColor = if (active) EliteColors.signal else EliteColors.surface3,
-            contentColor = if (active) EliteColors.ink else EliteColors.paper,
-            focusedContainerColor = EliteColors.signal,
-            focusedContentColor = EliteColors.ink,
-            pressedContainerColor = EliteColors.surface2,
-            pressedContentColor = EliteColors.paper,
-        ),
-    ) {
-        Text(label, fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)
-    }
-}

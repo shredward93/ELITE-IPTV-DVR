@@ -35,8 +35,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -69,7 +67,6 @@ fun DVRLibraryScreen(
     // Inline player state
     val context = LocalContext.current
     var playingUrl by remember { mutableStateOf<String?>(null) }
-    var isLiveRecording by remember { mutableStateOf(false) }
     val player = remember {
         ExoPlayer.Builder(context)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -87,27 +84,9 @@ fun DVRLibraryScreen(
         val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
         player.stop()
         player.clearMediaItems()
-        if (isLiveRecording) {
-            // HLS event playlist: ExoPlayer treats it as live by default and starts at the
-            // live edge. Listen for timeline ready, then seek to absolute position 0 (oldest
-            // available segment in the EVENT playlist).
-            val seekToStart = object : Player.Listener {
-                override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-                    if (timeline.windowCount > 0) {
-                        val window = Timeline.Window()
-                        timeline.getWindow(0, window)
-                        // For dynamic windows, seekTo(0) targets the start of the seekable
-                        // window. For event playlists (no sliding), that's the very first segment.
-                        player.seekTo(0L)
-                        player.removeListener(this)
-                    }
-                }
-            }
-            player.addListener(seekToStart)
-            player.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
-        } else {
-            player.setMediaItem(MediaItem.fromUri(url))
-        }
+        // Direct .ts file playback (works for completed AND in-progress files via range requests).
+        // Position 0 = byte 0 = true beginning of the recording. No HLS live-edge issues.
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(url)), /* startPositionMs= */ 0L)
         player.prepare()
     }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.release() } }
@@ -194,9 +173,8 @@ fun DVRLibraryScreen(
                     )
                 }
                 items(viewModel.activeRecordings, key = { "active-${it.index}-${it.channelName}" }) { rec ->
-                    ActiveRecordingRow(rec) { livePath ->
-                        isLiveRecording = true
-                        playingUrl = ApiClient.resolvePlaybackUrl(viewModel.pcUrl, livePath)
+                    ActiveRecordingRow(rec) { playPath ->
+                        playingUrl = ApiClient.resolvePlaybackUrl(viewModel.pcUrl, playPath)
                     }
                 }
                 item {
@@ -211,7 +189,6 @@ fun DVRLibraryScreen(
             }
             items(viewModel.completedRecordings, key = { it.filename }) { rec ->
                 RecordingRow(rec) {
-                    isLiveRecording = false
                     playingUrl = ApiClient.recordingUrl(viewModel.pcUrl, rec.filename)
                 }
             }
@@ -220,12 +197,14 @@ fun DVRLibraryScreen(
 }
 
 @Composable
-private fun ActiveRecordingRow(rec: ActiveRecording, onPlay: (liveHlsPath: String) -> Unit) {
-    val livePath = rec.liveHlsUrl ?: return
+private fun ActiveRecordingRow(rec: ActiveRecording, onPlay: (playPath: String) -> Unit) {
+    // Prefer the .ts file URL — it always plays from the start of the recording (byte 0)
+    // and supports range requests for scrubbing. Fall back to live HLS if missing.
+    val playPath = rec.tsUrl ?: rec.liveHlsUrl ?: return
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     Surface(
-        onClick = { onPlay(livePath) },
+        onClick = { onPlay(playPath) },
         modifier = Modifier.fillMaxWidth().height(72.dp),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(

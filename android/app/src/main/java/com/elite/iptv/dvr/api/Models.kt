@@ -95,6 +95,11 @@ data class ActiveRecording(
     @SerializedName("remaining_secs") val remainingSecs: Int? = null,
     @SerializedName("output_file")   val outputFile: String? = null,
     @SerializedName("live_hls_url")  val liveHlsUrl: String? = null,
+    /**
+     * Path to the in-progress `.ts` file (`/recordings/<filename>`).
+     * Range requests work, so this plays from byte 0 (true beginning of recording).
+     */
+    @SerializedName("ts_url")        val tsUrl: String? = null,
 )
 
 data class RecentRecording(

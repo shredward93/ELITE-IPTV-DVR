@@ -252,7 +252,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val payload = ApiClient.service.getRecordings()
                 activeRecordings = payload.active
-                    .filter { it.status == "recording" && !it.liveHlsUrl.isNullOrBlank() }
+                    .filter {
+                        it.status == "recording" &&
+                            (!it.tsUrl.isNullOrBlank() || !it.liveHlsUrl.isNullOrBlank())
+                    }
                 completedRecordings = payload.completed
             }.onFailure { errorMessage = it.message }
             isLoading = false

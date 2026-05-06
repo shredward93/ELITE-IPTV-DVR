@@ -1,11 +1,120 @@
 import subprocess
 import datetime
+import math
 import os
+import re
 import shutil
 import threading
 import time
 
 import config
+
+_WALL_CLOCK_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])\s*$")
+
+
+def parse_schedule_start_time_raw(raw: object, now: datetime.datetime) -> tuple[datetime.datetime, str]:
+    """
+    Parse POST /api/schedule `start_time` for desktop + NAS + remote.html + Android TV.
+
+    Returns (parsed_naive_datetime, kind) where kind is:
+      "now"        — literal NOW
+      "absolute"   — epoch ms/s or ISO timestamp (explicit instant)
+      "wall_clock" — same-day clock string (legacy desktop + Android `hh:mm a`)
+
+    Caller should pass the result through `normalize_schedule_start_time`.
+    """
+    if raw == "NOW" or (isinstance(raw, str) and raw.strip().upper() == "NOW"):
+        return now, "now"
+
+    if isinstance(raw, bool):
+        raise ValueError("boolean start_time is invalid")
+
+    if isinstance(raw, (int, float)):
+        ts = float(raw)
+        if ts > 1e11:
+            ts = ts / 1000.0
+        return datetime.datetime.fromtimestamp(ts), "absolute"
+
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.upper() == "NOW":
+            return now, "now"
+
+        epoch_sec = _try_parse_epoch_seconds_string(s)
+        if epoch_sec is not None:
+            return datetime.datetime.fromtimestamp(epoch_sec), "absolute"
+
+        try:
+            dt = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+        if dt is not None:
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(None).replace(tzinfo=None)
+            return dt, "absolute"
+
+        m = _WALL_CLOCK_RE.match(s)
+        if not m:
+            raise ValueError(f"unsupported start_time string: {s!r}")
+        h24 = _twelve_hour_to_24(int(m.group(1)), int(m.group(2)), m.group(3).upper())
+        parsed = datetime.datetime(
+            now.year, now.month, now.day,
+            h24[0], h24[1], 0, 0,
+        )
+        return parsed, "wall_clock"
+
+    raise ValueError(f"unsupported start_time type: {type(raw).__name__}")
+
+
+def _try_parse_epoch_seconds_string(s: str) -> float | None:
+    """Interpret digit strings / decimals as UNIX seconds (handles JS ms timestamps)."""
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    if not math.isfinite(v):
+        return None
+    av = abs(v)
+    if av < 1e9:
+        return None
+    if v > 1e11:
+        v = v / 1000.0
+    return v
+
+
+def _twelve_hour_to_24(h12: int, minute: int, am_pm: str) -> tuple[int, int]:
+    if not (1 <= h12 <= 12 and 0 <= minute <= 59):
+        raise ValueError("invalid wall-clock time")
+    if am_pm == "AM":
+        h = 0 if h12 == 12 else h12
+    elif am_pm == "PM":
+        h = 12 if h12 == 12 else h12 + 12
+    else:
+        raise ValueError("invalid AM/PM")
+    return h, minute
+
+
+def normalize_schedule_start_time(
+    parsed: datetime.datetime,
+    now: datetime.datetime,
+    kind: str,
+) -> datetime.datetime:
+    """
+    Align parsed start with server rules:
+      • NOW → `now`
+      • wall_clock → if that clock already passed today, use tomorrow (legacy behavior)
+      • absolute   → epoch / ISO instant; if already in the past, start immediately
+    """
+    if kind == "now":
+        return now
+    if kind == "wall_clock":
+        t = parsed
+        if t < now:
+            t += datetime.timedelta(days=1)
+        return t
+    if parsed < now:
+        return now
+    return parsed
 
 
 def _failover_streak_secs() -> int:

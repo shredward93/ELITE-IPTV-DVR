@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from core.epg import fetch_epg
+from core.recorder import normalize_schedule_start_time, parse_schedule_start_time_raw
 
 APP_VERSION = "1.0.0"
 
@@ -1443,14 +1444,8 @@ class IPTVRecorderApp(ctk.CTk):
     def _web_schedule(self, action):
         try:
             now = datetime.datetime.now()
-            if action.get("start_time") == "NOW":
-                start_time = now
-            else:
-                start_time = datetime.datetime.strptime(action["start_time"].strip(), "%I:%M %p").replace(
-                    year=now.year, month=now.month, day=now.day
-                )
-                if start_time < now:
-                    start_time += datetime.timedelta(days=1)
+            parsed, kind = parse_schedule_start_time_raw(action.get("start_time"), now)
+            start_time = normalize_schedule_start_time(parsed, now, kind)
             job = RecordingJob(
                 action["channel_name"], action["channel_id"],
                 start_time, int(action["duration_mins"]), self.output_dir

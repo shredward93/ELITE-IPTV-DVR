@@ -27,7 +27,13 @@ from core.channels import parse_m3u_channels
 from core.credentials import load_credentials
 from core.dvr_manager import DVRManager
 from core.live_preview import LivePreviewManager
-from core.recorder import RecordingJob, run_job, job_duration_secs
+from core.recorder import (
+    RecordingJob,
+    job_duration_secs,
+    normalize_schedule_start_time,
+    parse_schedule_start_time_raw,
+    run_job,
+)
 from core.tunnel import TunnelManager
 from core.web_server import WebContext, start_web_server
 
@@ -177,10 +183,12 @@ class HeadlessServer:
         return {"recording_failover_secs": int(config.RECORDING_FAILOVER_SECS)}
 
     def _web_get_channels(self, q: str) -> list[dict]:
-        """Search channels for web API."""
-        if not q:
-            return []
-        matches = [n for n in self.all_channel_names if q.lower() in n.lower()][:25]
+        """Search channels for web API (same rules as desktop ui/app.py)."""
+        qn = q.lower().strip()
+        if not qn:
+            matches = self.all_channel_names[:25]
+        else:
+            matches = [n for n in self.all_channel_names if qn in n.lower()][:25]
         return [{"name": n, "id": self.channel_map[n]} for n in matches]
 
     def _web_get_all_channels(self) -> list[dict]:
@@ -206,7 +214,7 @@ class HeadlessServer:
             for job in self.recording_jobs:
                 if job.status not in ("waiting", "recording"):
                     continue
-                payload.append({
+                row = {
                     "channel_name": job.channel_name,
                     "channel_id": job.channel_id,
                     "start_time": job.start_time.isoformat(),
@@ -214,7 +222,10 @@ class HeadlessServer:
                     "output_dir": job.output_dir,
                     "backup_channel_id": job.backup_channel_id,
                     "backup_channel_name": job.backup_channel_name,
-                })
+                }
+                if job.custom_name:
+                    row["custom_name"] = job.custom_name
+                payload.append(row)
             with open(config.SCHEDULES_FILE, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
         except Exception as e:
@@ -259,7 +270,14 @@ class HeadlessServer:
                 job_duration_mins = max(1, int((duration_secs + 59) // 60))
                 job_duration_secs = duration_secs
 
-            job = RecordingJob(channel_name, channel_id, job_start_time, job_duration_mins, item.get("output_dir") or self.output_dir)
+            job = RecordingJob(
+                channel_name,
+                channel_id,
+                job_start_time,
+                job_duration_mins,
+                item.get("output_dir") or self.output_dir,
+                custom_name=item.get("custom_name"),
+            )
             job.duration_secs = job_duration_secs
             job.backup_channel_id = item.get("backup_channel_id") or None
             job.backup_channel_name = item.get("backup_channel_name") or None
@@ -282,15 +300,15 @@ class HeadlessServer:
             if action["type"] == "schedule":
                 self._web_schedule(action)
             elif action["type"] == "stop":
+                active = [j for j in self.recording_jobs if j.status in ("waiting", "recording")]
                 idx = action.get("index", 0)
-                if 0 <= idx < len(self.recording_jobs):
-                    job = self.recording_jobs[idx]
-                    if job.status in ("waiting", "recording"):
-                        job.status = "stopped"
-                        if job.process and job.process.poll() is None:
-                            job.process.terminate()
-                        self._log(f"Stopped: '{job.channel_name}'")
-                        self._persist_recording_jobs()
+                if 0 <= idx < len(active):
+                    job = active[idx]
+                    job.status = "stopped"
+                    if job.process and job.process.poll() is None:
+                        job.process.terminate()
+                    self._log(f"Stopped: '{job.channel_name}'")
+                    self._persist_recording_jobs()
             elif action["type"] == "fav_add":
                 from core.favorites import load_favorites, save_favorites
                 import config
@@ -336,12 +354,8 @@ class HeadlessServer:
         """Schedule a recording from web API."""
         try:
             now = datetime.datetime.now()
-            if action.get("start_time") == "NOW":
-                start_time = now
-            else:
-                start_time = datetime.datetime.fromtimestamp(int(action["start_time"]) / 1000)
-                if start_time < now:
-                    start_time = now
+            parsed, kind = parse_schedule_start_time_raw(action.get("start_time"), now)
+            start_time = normalize_schedule_start_time(parsed, now, kind)
 
             job = RecordingJob(
                 action["channel_name"],
@@ -349,6 +363,7 @@ class HeadlessServer:
                 start_time,
                 int(action["duration_mins"]),
                 self.output_dir,
+                custom_name=action.get("custom_name"),
             )
             job.backup_channel_id = self.backup_channel_id
             job.backup_channel_name = self.backup_channel_name

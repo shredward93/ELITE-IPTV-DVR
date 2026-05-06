@@ -25,7 +25,13 @@ from core.credentials import load_credentials
 from core.epg import fetch_epg
 from core.favorites import load_favorites, save_favorites
 from core.dvr_manager import DVRManager
-from core.recorder import RecordingJob, run_job, job_duration_secs
+from core.recorder import (
+    RecordingJob,
+    job_duration_secs,
+    normalize_schedule_start_time,
+    parse_schedule_start_time_raw,
+    run_job,
+)
 from core.startup import is_autostart_enabled
 from core.tunnel import TunnelManager
 from core.live_preview import LivePreviewManager
@@ -438,7 +444,7 @@ class IPTVRecorderApp(ctk.CTk):
             for job in self.recording_jobs:
                 if job.status not in ("waiting", "recording"):
                     continue
-                payload.append({
+                row = {
                     "channel_name": job.channel_name,
                     "channel_id": job.channel_id,
                     "start_time": job.start_time.isoformat(),
@@ -447,7 +453,10 @@ class IPTVRecorderApp(ctk.CTk):
                     "output_dir": job.output_dir,
                     "backup_channel_id": job.backup_channel_id,
                     "backup_channel_name": job.backup_channel_name,
-                })
+                }
+                if job.custom_name:
+                    row["custom_name"] = job.custom_name
+                payload.append(row)
             with open(config.SCHEDULES_FILE, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
         except Exception:
@@ -491,7 +500,14 @@ class IPTVRecorderApp(ctk.CTk):
                 job_duration_mins = max(1, int((duration_secs + 59) // 60))
                 job_duration_secs = duration_secs
 
-            job = RecordingJob(channel_name, channel_id, job_start_time, job_duration_mins, item.get("output_dir") or self.output_dir)
+            job = RecordingJob(
+                channel_name,
+                channel_id,
+                job_start_time,
+                job_duration_mins,
+                item.get("output_dir") or self.output_dir,
+                custom_name=item.get("custom_name"),
+            )
             job.duration_secs = job_duration_secs
             job.backup_channel_id = item.get("backup_channel_id") or None
             job.backup_channel_name = item.get("backup_channel_name") or None
@@ -691,14 +707,8 @@ class IPTVRecorderApp(ctk.CTk):
     def _web_schedule(self, action):
         try:
             now = datetime.datetime.now()
-            if action.get("start_time") == "NOW":
-                start_time = now
-            else:
-                start_time = datetime.datetime.strptime(
-                    action["start_time"].strip(), "%I:%M %p"
-                ).replace(year=now.year, month=now.month, day=now.day)
-                if start_time < now:
-                    start_time += datetime.timedelta(days=1)
+            parsed, kind = parse_schedule_start_time_raw(action.get("start_time"), now)
+            start_time = normalize_schedule_start_time(parsed, now, kind)
             job = RecordingJob(
                 action["channel_name"], action["channel_id"],
                 start_time, int(action["duration_mins"]), self.output_dir,

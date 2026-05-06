@@ -91,12 +91,18 @@ fun RecordNowChannelDialog(
                 Text("Duration", color = EliteColors.paperMuted, fontSize = 14.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(30, 60, 120, 180).forEach { mins ->
+                        val sel = durationMins == mins
                         TextButton(
                             onClick = { onDurationChange(mins) },
                             colors = MaterialButtonDefaults.textButtonColors(
-                                contentColor = if (durationMins == mins) EliteColors.signal else EliteColors.paper,
+                                contentColor = if (sel) EliteColors.pickerSelected else EliteColors.pickerUnselected,
                             ),
-                        ) { Text("${mins}m") }
+                        ) {
+                            Text(
+                                "${mins}m",
+                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        }
                     }
                 }
             }
@@ -158,23 +164,32 @@ fun ScheduleLaterChannelDialog(
                 Text("Start in", color = EliteColors.paperMuted, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(15, 30, 60, 120).forEach { off ->
+                        val sel = offsetMins == off
                         TextButton(
                             onClick = { onOffsetChange(off) },
                             colors = MaterialButtonDefaults.textButtonColors(
-                                contentColor = if (offsetMins == off) EliteColors.signal else EliteColors.paper,
+                                contentColor = if (sel) EliteColors.pickerSelected else EliteColors.pickerUnselected,
                             ),
-                        ) { Text("+$off m") }
+                        ) {
+                            Text("+$off m", fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
                 }
                 Text("Duration", color = EliteColors.paperMuted, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(30, 60, 120, 180).forEach { mins ->
+                        val sel = durationMins == mins
                         TextButton(
                             onClick = { onDurationChange(mins) },
                             colors = MaterialButtonDefaults.textButtonColors(
-                                contentColor = if (durationMins == mins) EliteColors.signal else EliteColors.paper,
+                                contentColor = if (sel) EliteColors.pickerSelected else EliteColors.pickerUnselected,
                             ),
-                        ) { Text("${mins}m") }
+                        ) {
+                            Text(
+                                "${mins}m",
+                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        }
                     }
                 }
                 Text("Starts at $startLabel", color = EliteColors.paper2, fontSize = 13.sp)

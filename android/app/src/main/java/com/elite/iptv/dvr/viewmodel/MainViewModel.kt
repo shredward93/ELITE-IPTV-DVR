@@ -19,6 +19,7 @@ import com.elite.iptv.dvr.api.FavoriteRequest
 import com.elite.iptv.dvr.api.RecordingSettings
 import com.elite.iptv.dvr.api.ScheduleRequest
 import com.elite.iptv.dvr.api.ServerInfo
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -36,6 +37,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Cancels stale single-channel EPG responses when the user changes channel quickly. */
     private var epgRequestGeneration = 0
+
+    private var searchJob: Job? = null
 
     var pcUrl by mutableStateOf(prefs.getString("pc_url", "") ?: "")
         private set
@@ -132,7 +135,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun searchChannels(query: String) {
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            if (query.isBlank()) {
+                runCatching { searchResults = ApiClient.service.searchChannels("") }
+                return@launch
+            }
+            delay(280)
             runCatching { searchResults = ApiClient.service.searchChannels(query) }
         }
     }
@@ -154,15 +163,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Window 0,0 = no server-side filter (matches shipped `android-tv-apk`); UI still clips to timeline.
             runCatching {
                 var listings: List<EpgListing> = emptyList()
-                for (attempt in 0 until 4) {
+                for (attempt in 0 until 3) {
                     listings = ApiClient.service.getEpg(
                         channelId = channelId,
                         limit = 48,
                         windowStartMs = 0L,
                         windowEndMs = 0L,
                     ).listings
-                    if (listings.isNotEmpty() || attempt == 3) break
-                    delay(1500)
+                    if (listings.isNotEmpty() || attempt == 2) break
+                    delay(650)
                 }
                 if (gen == epgRequestGeneration) {
                     epgListings = listings
@@ -225,7 +234,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         if (!anyData) {
-            delay(2000)
+            delay(1_200)
             channelIds.chunked(GUIDE_EPG_CHUNK).forEach { chunk ->
                 loadGuideEpgChunk(chunk)
             }

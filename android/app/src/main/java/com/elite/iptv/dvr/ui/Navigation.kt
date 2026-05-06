@@ -1,6 +1,7 @@
 package com.elite.iptv.dvr.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -36,9 +37,13 @@ sealed class Screen(val route: String) {
 @Composable
 fun EliteNavHost(viewModel: MainViewModel) {
     val nav = rememberNavController()
-    val start = if (viewModel.pcUrl.isEmpty()) Screen.Pair.route else Screen.Channels.route
+    // Must stay stable across recompositions. If this flips when `pcUrl` goes empty→set after
+    // pairing, NavHost can rebuild the graph and break back stack (Player → Channels instead of Guide).
+    val startDestination = remember {
+        if (viewModel.pcUrl.isEmpty()) Screen.Pair.route else Screen.Channels.route
+    }
 
-    NavHost(navController = nav, startDestination = start) {
+    NavHost(navController = nav, startDestination = startDestination) {
 
         composable(Screen.Pair.route) {
             PairScreen(viewModel) {

@@ -121,12 +121,12 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                 keyboardActions = KeyboardActions(onDone = { connect() }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = EliteColors.signal,
-                    unfocusedBorderColor = EliteColors.rule,
+                    unfocusedBorderColor = EliteColors.ruleBright,
                     focusedTextColor = EliteColors.paper,
                     unfocusedTextColor = EliteColors.paper,
                     cursorColor = EliteColors.signal,
                     focusedLabelColor = EliteColors.signal,
-                    unfocusedLabelColor = EliteColors.paperMuted,
+                    unfocusedLabelColor = EliteColors.pickerUnselected,
                 ),
             )
 
@@ -178,12 +178,12 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = EliteColors.signal,
-                        unfocusedBorderColor = EliteColors.rule,
+                        unfocusedBorderColor = EliteColors.ruleBright,
                         focusedTextColor = EliteColors.paper,
                         unfocusedTextColor = EliteColors.paper,
                         cursorColor = EliteColors.signal,
                         focusedLabelColor = EliteColors.signal,
-                        unfocusedLabelColor = EliteColors.paperMuted,
+                        unfocusedLabelColor = EliteColors.pickerUnselected,
                     ),
                 )
                 Spacer(Modifier.height(10.dp))

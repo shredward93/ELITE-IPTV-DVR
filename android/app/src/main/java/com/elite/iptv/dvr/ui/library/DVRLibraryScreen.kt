@@ -63,8 +63,6 @@ fun DVRLibraryScreen(
 ) {
     LaunchedEffect(Unit) { viewModel.loadCompletedRecordings() }
 
-    BackHandler { onBack() }
-
     // Inline player state
     val context = LocalContext.current
     var playingUrl by remember { mutableStateOf<String?>(null) }
@@ -82,6 +80,18 @@ fun DVRLibraryScreen(
             .build()
             .apply { playWhenReady = true }
     }
+
+    BackHandler(playingUrl == null) { onBack() }
+    BackHandler(playingUrl != null) {
+        val pv = libraryPlayerView
+        if (pv != null && pv.isControllerFullyVisible) {
+            pv.hideController()
+        } else {
+            playingUrl = null
+            player.stop()
+        }
+    }
+
     LaunchedEffect(playingUrl) {
         val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
         player.stop()
@@ -238,7 +248,11 @@ private fun ActiveRecordingRow(rec: ActiveRecording, onPlay: (playPath: String) 
         ),
         scale = TvFocusDefaults.surfaceScaleCard,
         border = ClickableSurfaceDefaults.border(
-            border = Border.None,
+            border = Border(
+                border = BorderStroke(1.dp, EliteColors.rule),
+                inset = 0.dp,
+                shape = RoundedCornerShape(8.dp),
+            ),
             focusedBorder = Border(
                 border = BorderStroke(2.dp, EliteColors.signal),
                 inset = 0.dp,
@@ -291,7 +305,11 @@ private fun RecordingRow(rec: CompletedRecording, onPlay: () -> Unit) {
         ),
         scale = TvFocusDefaults.surfaceScaleCard,
         border = ClickableSurfaceDefaults.border(
-            border = Border.None,
+            border = Border(
+                border = BorderStroke(1.dp, EliteColors.rule),
+                inset = 0.dp,
+                shape = RoundedCornerShape(8.dp),
+            ),
             focusedBorder = Border(
                 border = BorderStroke(2.dp, EliteColors.signal),
                 inset = 0.dp,

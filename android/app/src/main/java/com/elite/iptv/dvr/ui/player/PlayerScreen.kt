@@ -150,7 +150,18 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler { onBack() }
+    BackHandler {
+        if (isLoading || error != null) {
+            onBack()
+            return@BackHandler
+        }
+        val pv = playerView
+        if (pv != null && pv.isControllerFullyVisible) {
+            pv.hideController()
+        } else {
+            onBack()
+        }
+    }
 
     // Keep focus pinned on PlayerView so remote D-pad / OK / FF / RW reach controls.
     LaunchedEffect(isLoading, error) {

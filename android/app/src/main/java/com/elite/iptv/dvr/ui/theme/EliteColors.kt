@@ -14,6 +14,8 @@ object EliteColors {
     val surface2 = Color(0xFF1C1C24)
     val surface3 = Color(0xFF232330)
     val rule = Color(0xFF2A2A35)
+    /** Slightly brighter outline for unfocused TV fields on dark surfaces. */
+    val ruleBright = Color(0xFF3E3E4E)
     val paper = Color(0xFFF4EFE3)
     val paper2 = Color(0xFFC9C3B4)
     val paperMuted = Color(0xFF7A7668)
@@ -22,4 +24,7 @@ object EliteColors {
     val signalSoft = Color(0x2EFF8C42)
     val live = Color(0xFFFF2E4D)
     val ok = Color(0xFF78E0A7)
+    /** Dialog / picker chips — unselected must read clearly on dark surfaces (WCAG-ish TV contrast). */
+    val pickerUnselected = Color(0xFF9A9588)
+    val pickerSelected = signal
 }

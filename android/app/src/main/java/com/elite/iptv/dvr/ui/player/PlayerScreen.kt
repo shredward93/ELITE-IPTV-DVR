@@ -8,7 +8,6 @@ package com.elite.iptv.dvr.ui.player
  * ExoPlayer + Media3 handle manifests; no per-channel codec forks here.
  */
 import android.net.Uri
-import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -183,35 +182,12 @@ fun PlayerScreen(
                     setShowPreviousButton(false)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
+                    // Show controller when stream is ready (e.g. transitions to play).
                     controllerAutoShow = true
                     controllerHideOnTouch = true
                     setControllerShowTimeoutMs(5_000)
                     isFocusable = true
                     isFocusableInTouchMode = true
-                    // OK / DPAD_CENTER toggles the controller; FF / RW also reveal it.
-                    setOnKeyListener { _, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_CENTER,
-                            KeyEvent.KEYCODE_ENTER -> {
-                                if (isControllerFullyVisible) hideController() else showController()
-                                true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                                player.seekBack(); showController(); true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                                player.seekForward(); showController(); true
-                            }
-                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                            KeyEvent.KEYCODE_SPACE -> {
-                                if (player.isPlaying) player.pause() else player.play()
-                                showController()
-                                true
-                            }
-                            else -> false
-                        }
-                    }
                 }.also { playerView = it }
             },
             modifier = Modifier.fillMaxSize(),

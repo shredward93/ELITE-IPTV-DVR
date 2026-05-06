@@ -35,6 +35,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -85,20 +87,27 @@ fun DVRLibraryScreen(
         val url = playingUrl ?: run { player.stop(); return@LaunchedEffect }
         player.stop()
         player.clearMediaItems()
-        val mediaItem = if (isLiveRecording) {
-            // HLS event playlist — seekable from position 0, not a live edge stream.
-            MediaItem.Builder()
-                .setUri(Uri.parse(url))
-                .setLiveConfiguration(
-                    MediaItem.LiveConfiguration.Builder()
-                        .setTargetOffsetMs(Long.MAX_VALUE) // don't seek to live edge
-                        .build()
-                )
-                .build()
+        if (isLiveRecording) {
+            // HLS event playlist: ExoPlayer treats it as live by default and starts at the
+            // live edge. Listen for timeline ready, then seek to absolute position 0 (oldest
+            // available segment in the EVENT playlist).
+            val seekToStart = object : Player.Listener {
+                override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                    if (timeline.windowCount > 0) {
+                        val window = Timeline.Window()
+                        timeline.getWindow(0, window)
+                        // For dynamic windows, seekTo(0) targets the start of the seekable
+                        // window. For event playlists (no sliding), that's the very first segment.
+                        player.seekTo(0L)
+                        player.removeListener(this)
+                    }
+                }
+            }
+            player.addListener(seekToStart)
+            player.setMediaItem(MediaItem.fromUri(Uri.parse(url)))
         } else {
-            MediaItem.fromUri(url)
+            player.setMediaItem(MediaItem.fromUri(url))
         }
-        player.setMediaItem(mediaItem, /* startPositionMs= */ 0L)
         player.prepare()
     }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player.release() } }

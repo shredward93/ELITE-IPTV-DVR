@@ -19,10 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +32,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.lazy.LazyRow
@@ -78,6 +73,8 @@ fun ChannelBrowserScreen(
 
     LaunchedEffect(Unit) {
         viewModel.loadFavorites()
+        viewModel.loadCategories()
+        viewModel.loadCompletedRecordings()
         viewModel.searchChannels("")
         runCatching { firstFocus.requestFocus() }
     }
@@ -88,8 +85,6 @@ fun ChannelBrowserScreen(
             actionNote = ""
         }
     }
-
-    var query by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -129,6 +124,46 @@ fun ChannelBrowserScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        if (viewModel.activeRecordings.isNotEmpty() || viewModel.completedRecordings.isNotEmpty()) {
+            Text("DVR", color = EliteColors.paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                val liveCount = viewModel.activeRecordings.size
+                val doneCount = viewModel.completedRecordings.size
+                TvButton(
+                    text = if (liveCount > 0) "Resume DVR ($liveCount live)" else "Open DVR Library",
+                    width = 220.dp,
+                    onClick = onLibraryOpen,
+                )
+                Text(
+                    text = "$doneCount completed recordings ready",
+                    color = EliteColors.paperMuted,
+                    fontSize = 13.sp,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        val favoriteCategories = remember(viewModel.categories, viewModel.favoriteCategoryIds) {
+            viewModel.favoriteCategoriesFromLoaded()
+        }
+        if (favoriteCategories.isNotEmpty()) {
+            Text("Favorite Categories", color = EliteColors.paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            LazyRow(
+                contentPadding = PaddingValues(end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(favoriteCategories, key = { it.categoryId }) { cat ->
+                    CategoryPill(
+                        label = cat.categoryName,
+                        onClick = onGuideGridOpen,
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
         // ── Favorites row ─────────────────────────────────────────────────────
         if (viewModel.favorites.isNotEmpty()) {
             Text("Favourites", color = EliteColors.paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -151,42 +186,18 @@ fun ChannelBrowserScreen(
             Spacer(Modifier.height(20.dp))
         }
 
-        // ── Search ────────────────────────────────────────────────────────────
-        OutlinedTextField(
-            value = query,
-            onValueChange = { q ->
-                query = q
-                viewModel.searchChannels(q)
-            },
-            label = { Text("Search channels", fontSize = 16.sp, color = EliteColors.paperMuted) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.searchChannels(query) }),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = EliteColors.signal,
-                unfocusedBorderColor = EliteColors.rule,
-                focusedTextColor = EliteColors.paper,
-                unfocusedTextColor = EliteColors.paper,
-                cursorColor = EliteColors.signal,
-                focusedLabelColor = EliteColors.signal,
-                unfocusedLabelColor = EliteColors.paperMuted,
-            ),
-        )
-
-        Spacer(Modifier.height(8.dp))
         Text(
-            text = "OK: channel actions (Watch live, Guide, Record…) • MENU / GUIDE / INFO: TV Guide • top TV Guide: full grid",
+            text = "DVR-first home: pick a recording, favorite category, or channel. Long-press a guide category to save it.",
             color = EliteColors.paperMuted,
             fontSize = 11.sp,
             letterSpacing = 0.4.sp,
         )
         Spacer(Modifier.height(12.dp))
 
-        // ── Results grid ──────────────────────────────────────────────────────
-        if (viewModel.searchResults.isEmpty() && query.isEmpty()) {
+        // ── Channel browser grid ───────────────────────────────────────────────
+        if (viewModel.searchResults.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Type to search channels", color = EliteColors.paperMuted, fontSize = 18.sp)
+                Text("Loading channels...", color = EliteColors.paperMuted, fontSize = 18.sp)
             }
         } else {
             LazyVerticalGrid(
@@ -356,5 +367,62 @@ private fun TvButton(text: String, onClick: () -> Unit) {
         ),
     ) {
         Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun TvButton(text: String, width: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.size(width = width, height = 44.dp),
+        scale = ButtonDefaults.scale(scale = 1f, focusedScale = 1.055f, pressedScale = 1f),
+        border = ButtonDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(10.dp),
+            ),
+        ),
+        colors = ButtonDefaults.colors(
+            containerColor        = EliteColors.surface3,
+            contentColor          = EliteColors.paper,
+            focusedContainerColor = EliteColors.signal,
+            focusedContentColor   = EliteColors.ink,
+            pressedContainerColor = EliteColors.signal,
+            pressedContentColor   = EliteColors.ink,
+        ),
+    ) {
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun CategoryPill(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.height(40.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = EliteColors.surface2,
+            focusedContainerColor = EliteColors.signal,
+        ),
+        scale = TvFocusDefaults.surfaceScaleCompact,
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(1.dp, EliteColors.rule),
+                inset = 0.dp,
+                shape = RoundedCornerShape(20.dp),
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, EliteColors.signal),
+                inset = 0.dp,
+                shape = RoundedCornerShape(20.dp),
+            ),
+        ),
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+            Text(label, color = EliteColors.paper, fontSize = 13.sp, maxLines = 1)
+        }
     }
 }

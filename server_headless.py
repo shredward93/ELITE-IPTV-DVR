@@ -24,8 +24,10 @@ from pathlib import Path
 
 import config
 from core.channels import parse_m3u_channels
+from core.category_favorites import load_category_favorites, save_category_favorites
 from core.credentials import load_credentials
 from core.dvr_manager import DVRManager
+from core.favorites import load_favorites, save_favorites
 from core.live_preview import LivePreviewManager
 from core.recorder import (
     RecordingJob,
@@ -55,6 +57,8 @@ class HeadlessServer:
         self._running = True
         self.backup_channel_id: str | None = None
         self.backup_channel_name: str | None = None
+        self.category_favorites: list[str] = load_category_favorites(config.CATEGORY_FAVORITES_FILE)
+        self.category_favorites_sync: bool = False
 
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
@@ -66,6 +70,7 @@ class HeadlessServer:
                 data = json.load(f)
             if "recording_failover_secs" in data:
                 config.RECORDING_FAILOVER_SECS = max(5, int(data["recording_failover_secs"]))
+            self.category_favorites_sync = bool(data.get("category_favorites_sync", False))
         except Exception:
             pass
 
@@ -78,6 +83,7 @@ class HeadlessServer:
             except Exception:
                 data = {}
             data["recording_failover_secs"] = int(config.RECORDING_FAILOVER_SECS)
+            data["category_favorites_sync"] = bool(self.category_favorites_sync)
             with open(config.SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
@@ -180,7 +186,10 @@ class HeadlessServer:
         }
 
     def _web_get_settings(self) -> dict:
-        return {"recording_failover_secs": int(config.RECORDING_FAILOVER_SECS)}
+        return {
+            "recording_failover_secs": int(config.RECORDING_FAILOVER_SECS),
+            "category_favorites_sync": bool(self.category_favorites_sync),
+        }
 
     def _web_get_channels(self, q: str) -> list[dict]:
         """Search channels for web API (same rules as desktop ui/app.py)."""
@@ -197,12 +206,13 @@ class HeadlessServer:
 
     def _web_get_favorites(self) -> list[dict]:
         """Return favorites for web API."""
-        from core.favorites import load_favorites
-        import config
         return load_favorites(config.FAVORITES_FILE)
 
     def _web_get_jobs(self) -> list[RecordingJob]:
         return self.recording_jobs
+
+    def _web_get_category_favorites(self) -> list[str]:
+        return list(self.category_favorites)
 
     def _web_get_recordings_dir(self) -> str:
         return self.output_dir
@@ -310,8 +320,6 @@ class HeadlessServer:
                     self._log(f"Stopped: '{job.channel_name}'")
                     self._persist_recording_jobs()
             elif action["type"] == "fav_add":
-                from core.favorites import load_favorites, save_favorites
-                import config
                 favorites = load_favorites(config.FAVORITES_FILE)
                 name = action.get("name")
                 cid = action.get("id")
@@ -320,14 +328,22 @@ class HeadlessServer:
                     save_favorites(config.FAVORITES_FILE, favorites)
                     self._log(f"[Remote] Saved channel: '{name}'")
             elif action["type"] == "fav_remove":
-                from core.favorites import load_favorites, save_favorites
-                import config
                 favorites = load_favorites(config.FAVORITES_FILE)
                 name = action.get("name")
                 if name:
                     favorites = [f for f in favorites if f["name"] != name]
                     save_favorites(config.FAVORITES_FILE, favorites)
                     self._log(f"[Remote] Removed channel: '{name}'")
+            elif action["type"] == "category_fav_add":
+                category_id = str(action.get("category_id", "")).strip()
+                if category_id and category_id not in self.category_favorites:
+                    self.category_favorites.append(category_id)
+                    save_category_favorites(config.CATEGORY_FAVORITES_FILE, self.category_favorites)
+            elif action["type"] == "category_fav_remove":
+                category_id = str(action.get("category_id", "")).strip()
+                if category_id:
+                    self.category_favorites = [c for c in self.category_favorites if c != category_id]
+                    save_category_favorites(config.CATEGORY_FAVORITES_FILE, self.category_favorites)
             elif action["type"] == "backup_set":
                 bid = action.get("id")
                 bname = action.get("name")
@@ -349,6 +365,11 @@ class HeadlessServer:
                     self._log(f"[Remote] Recording failover set to {secs}s")
                 except (TypeError, ValueError):
                     self._log("[Remote] Invalid recording failover value ignored")
+            elif action["type"] == "set_category_favorites_sync":
+                self.category_favorites_sync = bool(action.get("value"))
+                self._save_settings()
+                mode = "enabled" if self.category_favorites_sync else "disabled"
+                self._log(f"[Remote] Category favorites sync {mode}")
 
     def _web_schedule(self, action: dict):
         """Schedule a recording from web API."""
@@ -394,6 +415,7 @@ class HeadlessServer:
             preview_start_fn=self.live_preview.start,
             preview_stop_fn=self.live_preview.stop,
             get_settings_fn=self._web_get_settings,
+            get_category_favorites_fn=self._web_get_category_favorites,
         )
         url = start_web_server(ctx)
         self._log(f"Web server started at {url}")

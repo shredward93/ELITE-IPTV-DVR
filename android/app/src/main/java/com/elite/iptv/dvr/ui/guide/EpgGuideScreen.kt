@@ -110,6 +110,12 @@ fun EpgGuideScreen(
 
     LaunchedEffect(Unit) { viewModel.loadCategories() }
 
+    LaunchedEffect(viewModel.categories, viewModel.favoriteCategoryIds) {
+        if (selectedCategory != null) return@LaunchedEffect
+        val firstFavorite = viewModel.favoriteCategoriesFromLoaded().firstOrNull()
+        selectedCategory = firstFavorite ?: viewModel.categories.firstOrNull()
+    }
+
     LaunchedEffect(selectedCategory) {
         val cat = selectedCategory ?: return@LaunchedEffect
         viewModel.loadChannelsByCategory(cat.categoryId)
@@ -141,7 +147,17 @@ fun EpgGuideScreen(
                     CategoryItem(
                         category = cat,
                         selected = cat.categoryId == selectedCategory?.categoryId,
+                        isFavorite = viewModel.isFavoriteCategory(cat.categoryId),
                         onClick  = { selectedCategory = cat },
+                        onFavoriteToggle = {
+                            val willAdd = !viewModel.isFavoriteCategory(cat.categoryId)
+                            viewModel.toggleFavoriteCategory(cat)
+                            actionNote = if (willAdd) {
+                                "Saved ${cat.categoryName} to favorite categories."
+                            } else {
+                                "Removed ${cat.categoryName} from favorite categories."
+                            }
+                        },
                     )
                 }
             }
@@ -355,12 +371,19 @@ fun EpgGuideScreen(
 // ── Category sidebar item ─────────────────────────────────────────────────────
 
 @Composable
-private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> Unit) {
+private fun CategoryItem(
+    category: Category,
+    selected: Boolean,
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onFavoriteToggle: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val onSignalBg = selected || focused
     Surface(
         onClick = onClick,
+        onLongClick = onFavoriteToggle,
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp),
@@ -385,18 +408,28 @@ private fun CategoryItem(category: Category, selected: Boolean, onClick: () -> U
                 .fillMaxSize()
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            if (selected) {
-                Text("►", color = EliteColors.ink, fontSize = 11.sp)
-                Spacer(Modifier.width(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selected) {
+                    Text("►", color = EliteColors.ink, fontSize = 11.sp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text     = category.categoryName,
+                    color    = if (onSignalBg) EliteColors.ink else EliteColors.paper,
+                    fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(130.dp),
+                )
             }
             Text(
-                text     = category.categoryName,
-                color    = if (onSignalBg) EliteColors.ink else EliteColors.paper,
-                fontSize = 15.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = if (isFavorite) "★" else "☆",
+                color = if (onSignalBg) EliteColors.ink else EliteColors.paperMuted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }

@@ -38,10 +38,15 @@ data class FavoriteRequest(
     val id: String,
 )
 
+data class CategoryFavoriteRequest(
+    @SerializedName("category_id") val categoryId: String,
+)
+
 data class MessageResponse(val message: String)
 
 data class RecordingSettings(
     @SerializedName("recording_failover_secs") val recordingFailoverSecs: Int,
+    @SerializedName("category_favorites_sync") val categoryFavoritesSync: Boolean = false,
 )
 
 data class OkResponse(

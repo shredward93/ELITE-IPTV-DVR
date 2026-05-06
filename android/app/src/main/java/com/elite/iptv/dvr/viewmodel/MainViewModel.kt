@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.elite.iptv.dvr.api.ApiClient
 import com.elite.iptv.dvr.api.ActiveRecording
 import com.elite.iptv.dvr.api.Category
+import com.elite.iptv.dvr.api.CategoryFavoriteRequest
 import com.elite.iptv.dvr.api.Channel
 import com.elite.iptv.dvr.api.CompletedRecording
 import com.elite.iptv.dvr.api.DvrSegment
@@ -34,6 +35,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val prefs = application.getSharedPreferences("elite_dvr", Context.MODE_PRIVATE)
+    private val favoriteCategoryKey = "favorite_category_ids"
+    private val categoryFavoriteSyncKey = "category_favorites_sync"
 
     /** Cancels stale single-channel EPG responses when the user changes channel quickly. */
     private var epgRequestGeneration = 0
@@ -55,6 +58,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var categories by mutableStateOf<List<Category>>(emptyList())
         private set
 
+    var favoriteCategoryIds by mutableStateOf(loadFavoriteCategoryIds())
+        private set
+
     var categoryChannels by mutableStateOf<List<Channel>>(emptyList())
         private set
 
@@ -74,6 +80,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var recordingFailoverSecs by mutableStateOf(30)
+        private set
+
+    var categoryFavoritesSync by mutableStateOf(
+        prefs.getBoolean(categoryFavoriteSyncKey, false),
+    )
         private set
 
     /** Same modes as `static/remote.html` watch bar (`eliteWatchMode`). */
@@ -118,12 +129,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun loadRecordingSettings() {
         val s = ApiClient.service.getSettings()
         recordingFailoverSecs = s.recordingFailoverSecs
+        categoryFavoritesSync = s.categoryFavoritesSync
+        prefs.edit().putBoolean(categoryFavoriteSyncKey, categoryFavoritesSync).apply()
+        if (categoryFavoritesSync) {
+            runCatching {
+                favoriteCategoryIds = ApiClient.service.getCategoryFavorites().toSet()
+                prefs.edit().putStringSet(favoriteCategoryKey, favoriteCategoryIds).apply()
+            }
+        }
     }
 
     suspend fun saveRecordingFailoverSecs(secs: Int) {
         val clamped = secs.coerceIn(5, 300)
-        val updated = ApiClient.service.updateSettings(RecordingSettings(clamped))
+        val updated = ApiClient.service.updateSettings(
+            RecordingSettings(
+                recordingFailoverSecs = clamped,
+                categoryFavoritesSync = categoryFavoritesSync,
+            ),
+        )
         recordingFailoverSecs = updated.recordingFailoverSecs
+        categoryFavoritesSync = updated.categoryFavoritesSync
+        prefs.edit().putBoolean(categoryFavoriteSyncKey, categoryFavoritesSync).apply()
+    }
+
+    suspend fun saveCategoryFavoritesSync(enabled: Boolean) {
+        val updated = ApiClient.service.updateSettings(
+            RecordingSettings(
+                recordingFailoverSecs = recordingFailoverSecs,
+                categoryFavoritesSync = enabled,
+            ),
+        )
+        recordingFailoverSecs = updated.recordingFailoverSecs
+        categoryFavoritesSync = updated.categoryFavoritesSync
+        prefs.edit().putBoolean(categoryFavoriteSyncKey, categoryFavoritesSync).apply()
+        if (categoryFavoritesSync) {
+            runCatching {
+                favoriteCategoryIds = ApiClient.service.getCategoryFavorites().toSet()
+                prefs.edit().putStringSet(favoriteCategoryKey, favoriteCategoryIds).apply()
+            }
+        }
     }
 
     // ── Channels ──────────────────────────────────────────────────────────────
@@ -198,6 +242,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { categories = ApiClient.service.getCategories() }
         }
     }
+
+    fun isFavoriteCategory(categoryId: String): Boolean = favoriteCategoryIds.contains(categoryId)
+
+    fun toggleFavoriteCategory(category: Category) {
+        viewModelScope.launch {
+            val next = favoriteCategoryIds.toMutableSet()
+            val isAdding = !next.contains(category.categoryId)
+            if (isAdding) {
+                next.add(category.categoryId)
+            } else {
+                next.remove(category.categoryId)
+            }
+            if (categoryFavoritesSync) {
+                runCatching {
+                    if (isAdding) {
+                        ApiClient.service.addCategoryFavorite(CategoryFavoriteRequest(category.categoryId))
+                    } else {
+                        ApiClient.service.removeCategoryFavorite(CategoryFavoriteRequest(category.categoryId))
+                    }
+                }.onFailure {
+                    return@launch
+                }
+            }
+            favoriteCategoryIds = next.toSet()
+            prefs.edit().putStringSet(favoriteCategoryKey, favoriteCategoryIds).apply()
+        }
+    }
+
+    fun favoriteCategoriesFromLoaded(): List<Category> =
+        categories.filter { favoriteCategoryIds.contains(it.categoryId) }
 
     fun loadChannelsByCategory(categoryId: String) {
         categoryChannels = emptyList()
@@ -283,4 +357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearError() { errorMessage = null }
+
+    private fun loadFavoriteCategoryIds(): Set<String> =
+        prefs.getStringSet(favoriteCategoryKey, emptySet())?.toSet() ?: emptySet()
 }

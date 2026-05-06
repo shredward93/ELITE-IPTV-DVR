@@ -434,6 +434,7 @@ class WebContext:
         preview_start_fn=None,      # (channel_id: str) -> dict — Live DVR web remote
         preview_stop_fn=None,       # (preview_id: int) -> dict
         get_settings_fn=None,       # () -> dict
+        get_category_favorites_fn=None,  # () -> list[str]
     ):
         self.get_status          = get_status_fn
         self.get_channels        = get_channels_fn
@@ -447,6 +448,7 @@ class WebContext:
         self.preview_start       = preview_start_fn
         self.preview_stop        = preview_stop_fn
         self.get_settings        = get_settings_fn
+        self.get_category_favorites = get_category_favorites_fn
 
 
 class RemoteHandler(BaseHTTPRequestHandler):
@@ -481,6 +483,12 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/favorites":
             self._json(self.ctx.get_favorites())
+
+        elif path == "/api/favorites/categories":
+            if getattr(self.ctx, "get_category_favorites", None):
+                self._json(self.ctx.get_category_favorites())
+            else:
+                self._json([])
 
         elif path == "/api/channels":
             q = qs.get("q", [""])[0].lower().strip()
@@ -596,7 +604,10 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if self.ctx.get_settings:
                 self._json(self.ctx.get_settings())
             else:
-                self._json({"recording_failover_secs": int(getattr(config, "RECORDING_FAILOVER_SECS", 30))})
+                self._json({
+                    "recording_failover_secs": int(getattr(config, "RECORDING_FAILOVER_SECS", 30)),
+                    "category_favorites_sync": False,
+                })
 
         # ── Android TV: discovery + info ─────────────────────────────────────
         elif path == "/api/info":
@@ -880,6 +891,22 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self.ctx.action_queue.put({"type": "fav_remove", "name": body.get("name")})
             self._json({"ok": True})
 
+        elif path == "/api/favorites/categories/add":
+            category_id = str(body.get("category_id", "")).strip()
+            if not category_id:
+                self._error(400, "category_id required")
+                return
+            self.ctx.action_queue.put({"type": "category_fav_add", "category_id": category_id})
+            self._json({"ok": True})
+
+        elif path == "/api/favorites/categories/remove":
+            category_id = str(body.get("category_id", "")).strip()
+            if not category_id:
+                self._error(400, "category_id required")
+                return
+            self.ctx.action_queue.put({"type": "category_fav_remove", "category_id": category_id})
+            self._json({"ok": True})
+
         elif path == "/api/backup/set":
             self.ctx.action_queue.put({"type": "backup_set", "id": body.get("id"), "name": body.get("name")})
             self._json({"message": f"Backup channel set to: {body.get('name')}"})
@@ -889,17 +916,24 @@ class RemoteHandler(BaseHTTPRequestHandler):
             self._json({"message": "Backup channel cleared"})
 
         elif path == "/api/settings":
-            secs = body.get("recording_failover_secs")
-            try:
-                secs = int(secs)
-            except (TypeError, ValueError):
-                self._error(400, "recording_failover_secs must be an integer")
-                return
-            if secs < 5 or secs > 300:
-                self._error(400, "recording_failover_secs must be between 5 and 300")
-                return
-            self.ctx.action_queue.put({"type": "set_recording_failover_secs", "value": secs})
-            self._json({"ok": True, "recording_failover_secs": secs})
+            response = {"ok": True}
+            if "recording_failover_secs" in body:
+                secs = body.get("recording_failover_secs")
+                try:
+                    secs = int(secs)
+                except (TypeError, ValueError):
+                    self._error(400, "recording_failover_secs must be an integer")
+                    return
+                if secs < 5 or secs > 300:
+                    self._error(400, "recording_failover_secs must be between 5 and 300")
+                    return
+                self.ctx.action_queue.put({"type": "set_recording_failover_secs", "value": secs})
+                response["recording_failover_secs"] = secs
+            if "category_favorites_sync" in body:
+                sync_enabled = bool(body.get("category_favorites_sync"))
+                self.ctx.action_queue.put({"type": "set_category_favorites_sync", "value": sync_enabled})
+                response["category_favorites_sync"] = sync_enabled
+            self._json(response)
 
         # ── Android TV: record now (alias for schedule NOW) ───────────────────
         elif path == "/api/record":

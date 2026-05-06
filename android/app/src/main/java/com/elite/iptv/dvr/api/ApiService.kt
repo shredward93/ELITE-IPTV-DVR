@@ -34,6 +34,15 @@ interface ApiService {
     @POST("api/favorites/add")
     suspend fun addFavorite(@Body body: FavoriteRequest): OkResponse
 
+    @GET("api/favorites/categories")
+    suspend fun getCategoryFavorites(): List<String>
+
+    @POST("api/favorites/categories/add")
+    suspend fun addCategoryFavorite(@Body body: CategoryFavoriteRequest): OkResponse
+
+    @POST("api/favorites/categories/remove")
+    suspend fun removeCategoryFavorite(@Body body: CategoryFavoriteRequest): OkResponse
+
     // ── EPG ───────────────────────────────────────────────────────────────────
 
     @GET("api/epg")

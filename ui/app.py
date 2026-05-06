@@ -23,6 +23,7 @@ import tkinter.messagebox as mb
 import config
 from core.credentials import load_credentials
 from core.epg import fetch_epg
+from core.category_favorites import load_category_favorites, save_category_favorites
 from core.favorites import load_favorites, save_favorites
 from core.dvr_manager import DVRManager
 from core.recorder import (
@@ -77,6 +78,8 @@ class IPTVRecorderApp(ctk.CTk):
         self._status_text          = "Fetching channel list…"
         self._web_actions          = queue.Queue()
         self.favorites             = []
+        self.category_favorites    = []
+        self.category_favorites_sync = False
         self._log_entries          = []
         self.backup_channel_name   = None
         self.backup_channel_id     = None
@@ -87,6 +90,7 @@ class IPTVRecorderApp(ctk.CTk):
         self.live_preview = LivePreviewManager()
 
         self._load_favorites()
+        self._load_category_favorites()
         self._build_ui()
         self._load_scheduled_recordings()
         self._tick()
@@ -406,8 +410,14 @@ class IPTVRecorderApp(ctk.CTk):
     def _load_favorites(self):
         self.favorites = load_favorites(config.FAVORITES_FILE)
 
+    def _load_category_favorites(self):
+        self.category_favorites = load_category_favorites(config.CATEGORY_FAVORITES_FILE)
+
     def _save_favorites(self):
         save_favorites(config.FAVORITES_FILE, self.favorites)
+
+    def _save_category_favorites(self):
+        save_category_favorites(config.CATEGORY_FAVORITES_FILE, self.category_favorites)
 
     def _load_settings(self):
         try:
@@ -435,6 +445,7 @@ class IPTVRecorderApp(ctk.CTk):
                     config.RECORDING_FAILOVER_SECS = max(5, int(data["recording_failover_secs"]))
                 except (ValueError, TypeError):
                     pass
+            self.category_favorites_sync = bool(data.get("category_favorites_sync", False))
         except Exception:
             pass
 
@@ -531,6 +542,7 @@ class IPTVRecorderApp(ctk.CTk):
                     "dvr_max_gb":     config.DVR_MAX_GB,
                     "schedule_file":  config.SCHEDULES_FILE,
                     "recording_failover_secs": config.RECORDING_FAILOVER_SECS,
+                    "category_favorites_sync": bool(self.category_favorites_sync),
                 }, f, indent=2)
         except Exception:
             pass
@@ -610,6 +622,7 @@ class IPTVRecorderApp(ctk.CTk):
             preview_start_fn=self.live_preview.start,
             preview_stop_fn=self.live_preview.stop,
             get_settings_fn=self._web_get_settings,
+            get_category_favorites_fn=lambda: list(self.category_favorites),
         )
         try:
             url = start_web_server(ctx)
@@ -662,6 +675,7 @@ class IPTVRecorderApp(ctk.CTk):
     def _web_get_settings(self):
         return {
             "recording_failover_secs": int(config.RECORDING_FAILOVER_SECS),
+            "category_favorites_sync": bool(self.category_favorites_sync),
         }
 
     def _process_web_actions(self):
@@ -686,6 +700,16 @@ class IPTVRecorderApp(ctk.CTk):
                 if name:
                     self._remove_favorite(name)
                     self._log(f"[Remote] Removed channel: '{name}'")
+            elif action["type"] == "category_fav_add":
+                category_id = str(action.get("category_id", "")).strip()
+                if category_id and category_id not in self.category_favorites:
+                    self.category_favorites.append(category_id)
+                    self._save_category_favorites()
+            elif action["type"] == "category_fav_remove":
+                category_id = str(action.get("category_id", "")).strip()
+                if category_id:
+                    self.category_favorites = [c for c in self.category_favorites if c != category_id]
+                    self._save_category_favorites()
             elif action["type"] == "backup_set":
                 self.backup_channel_id = action.get("id")
                 self.backup_channel_name = action.get("name")
@@ -703,6 +727,11 @@ class IPTVRecorderApp(ctk.CTk):
                     self._log(f"[Remote] Recording failover set to {secs}s")
                 except (TypeError, ValueError):
                     self._log("[Remote] Invalid recording failover value ignored")
+            elif action["type"] == "set_category_favorites_sync":
+                self.category_favorites_sync = bool(action.get("value"))
+                self._save_settings()
+                mode = "enabled" if self.category_favorites_sync else "disabled"
+                self._log(f"[Remote] Category favorites sync {mode}")
 
     def _web_schedule(self, action):
         try:

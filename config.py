@@ -20,6 +20,7 @@ else:
     _BUNDLE_DIR = _APP_DIR
 
 FAVORITES_FILE   = os.path.join(_APP_DIR, "favorites.json")
+CATEGORY_FAVORITES_FILE = os.path.join(_APP_DIR, "category_favorites.json")
 CREDENTIALS_FILE = os.path.join(_APP_DIR, "credentials.json")
 SETTINGS_FILE    = os.path.join(_APP_DIR, "settings.json")
 SCHEDULES_FILE   = os.path.join(_APP_DIR, "scheduled_recordings.json")

@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,12 +50,16 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
     var isError by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
     var failoverSecsText by remember { mutableStateOf(viewModel.recordingFailoverSecs.toString()) }
+    var categorySyncEnabled by remember { mutableStateOf(viewModel.categoryFavoritesSync) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(viewModel.pcUrl) {
         if (viewModel.pcUrl.isNotBlank()) {
             runCatching { viewModel.loadRecordingSettings() }
-                .onSuccess { failoverSecsText = viewModel.recordingFailoverSecs.toString() }
+                .onSuccess {
+                    failoverSecsText = viewModel.recordingFailoverSecs.toString()
+                    categorySyncEnabled = viewModel.categoryFavoritesSync
+                }
         }
     }
 
@@ -187,6 +192,20 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                     ),
                 )
                 Spacer(Modifier.height(10.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Sync favorite categories across devices",
+                        color = EliteColors.paperMuted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
+                    Switch(
+                        checked = categorySyncEnabled,
+                        onCheckedChange = { categorySyncEnabled = it },
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = {
                         scope.launch {
@@ -198,9 +217,17 @@ fun PairScreen(viewModel: MainViewModel, onConnected: () -> Unit) {
                             }
                             runCatching { viewModel.saveRecordingFailoverSecs(secs) }
                                 .onSuccess {
-                                    failoverSecsText = viewModel.recordingFailoverSecs.toString()
-                                    status = "Failover saved: ${viewModel.recordingFailoverSecs}s"
-                                    isError = false
+                                    runCatching { viewModel.saveCategoryFavoritesSync(categorySyncEnabled) }
+                                        .onSuccess {
+                                            failoverSecsText = viewModel.recordingFailoverSecs.toString()
+                                            categorySyncEnabled = viewModel.categoryFavoritesSync
+                                            status = "Settings saved (${viewModel.recordingFailoverSecs}s failover)"
+                                            isError = false
+                                        }
+                                        .onFailure {
+                                            status = "Could not save category sync setting"
+                                            isError = true
+                                        }
                                 }
                                 .onFailure {
                                     status = "Could not save failover setting"
